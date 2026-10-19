@@ -1,22 +1,47 @@
 #pragma once
-#include <cuda.h>
-#include <cuda_runtime.h>
-#include "globals.h"
+
 #include <vector>
 #include <string>
 #include <string_view>
+#include <iostream>
+#include <cstdio>
+
+inline void geterror(const char* label, cudaError_t err) {
+	if (err != cudaSuccess) {
+		std::fprintf(stderr, " noMlp : %s failed: %s\n", label, cudaGetErrorString(err));
+	}
+}
+
+
+struct modelst{
+    int node_in;
+    int node_out;
+    float lr;
+    int datasize;
+    bool batching;
+    int batchsize;
+    std::string_view activation;
+    const char* weights_adrs;
+    const char* bias_adrs;
+    std::vector<int> network;
+};
+   
+   
+
 
 class nomlp {
     private:
 
 
     public:
-    modelst model;
-    void init(float lr,int batchsize,std::string_view activation= "tanh");
-    void initlayers(std::vector<int> neurons);
-    void initlizeWeights();
-    void loadWeights(const char* weights, const char* bias);
+   
+   
+    void init(modelst model);
+   
+    std::vector<float> pridiction(std::vector<float>& inputs);
+      float backward(std::vector<float> targets);
 
+      void closeMlp();
 };
 
 inline nomlp noMlp;
