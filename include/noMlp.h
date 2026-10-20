@@ -42,6 +42,8 @@ class nomlp {
       float backward(std::vector<float> targets);
 
       void closeMlp();
+
+      float train_batch(std::vector<float>&inputs,std::vector<float>& targets);
 };
 
 inline nomlp noMlp;

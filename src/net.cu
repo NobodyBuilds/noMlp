@@ -54,7 +54,10 @@ __global__ void hiddenlayers(int n,int n_in,int w,int d,int p,int b,bool isout,c
 
 
 std::vector<float> forwardpass(std::vector<float> inputs){
-   if(model.batching)printf("nomlp: use nomlp.train_batch(inputs) for batched training or disable batching in initlization \n ");return;
+   if(model.batching) {
+       printf("nomlp: use nomlp.train_batch(inputs) for batched training or disable batching in initlization \n ");
+       return {};
+   }
     if (host_layerdata.empty()) {
         std::fprintf(stderr, "cannot run prediction before initializing the network\n");
         return {};

@@ -174,15 +174,14 @@ void allocatemlpmemory(){
     geterror("cudaMalloc device node values", cudaMalloc(&device__nodevals,model.batchsize* host_nodedatabuffersize *sizeof(float)));
     geterror("cudaMalloc device preactivations", cudaMalloc(&device__preact,model.batchsize* host_nodedatabuffersize *sizeof(float)));
     geterror("cudaMalloc device deltas", cudaMalloc(&device__delta,model.batchsize* host_nodedatabuffersize *sizeof(float)));
-    geterror("cudaMalloc device inputs", cudaMalloc(&device_mlp_inputs,model.datasize/model.batchsize* model.node_in*sizeof(float)));
-    geterror("cudaMalloc device targets", cudaMalloc(&device_mlp_target,model.datasize/model.batchsize* model.node_out*sizeof(float)));
+    const int input_capacity = model.batchsize;
+    const int target_capacity = model.batching ? model.batchsize * model.node_out : model.node_out;
+    geterror("cudaMalloc device inputs", cudaMalloc(&device_mlp_inputs, static_cast<size_t>(input_capacity) * model.node_in * sizeof(float)));
+    geterror("cudaMalloc device targets", cudaMalloc(&device_mlp_target, static_cast<size_t>(target_capacity) * sizeof(float)));
 
     geterror("cudaMemcpy weights to device", cudaMemcpy(device__weights,host_weights_array.data(),host_weightbuffersize*sizeof(float),cudaMemcpyHostToDevice));
     geterror("cudaMemcpy bias to device", cudaMemcpy(device__bias,host_bias_array.data(),host_biasbuffersize*sizeof(float),cudaMemcpyHostToDevice));
 
-    if(model.batching){
-        geterror("cudamalloc of batchidx ",cudaMalloc(&batchidx,model.datasize*sizeof(int)));
-    }
 }
 
 

@@ -9,8 +9,8 @@ inline void initadam(int wn,int bn){
     geterror("adam weight malloc",cudaMalloc(&adam_weights,wn*sizeof(float2)));
     geterror("adam bias malloc",cudaMalloc(&adam_bias,bn*sizeof(float2)));
 
-    geterror("adam weight memset",cudaMemset(adam_weights,0,wn*sizeof(float)));
-    geterror("adam bias memset",cudaMemset(adam_bias,0,bn*sizeof(float)));
+    geterror("adam weight memset",cudaMemset(adam_weights,0,wn*sizeof(float2)));
+    geterror("adam bias memset",cudaMemset(adam_bias,0,bn*sizeof(float2)));
 }
 inline void clearadam(){
     if (adam_weights != nullptr) {

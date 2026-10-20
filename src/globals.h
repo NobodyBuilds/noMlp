@@ -7,7 +7,6 @@
 
 inline std::vector<float> host_weights_array;
 inline std::vector<float> host_bias_array;
-inline std::vector<float> host_nodedata_array;
 inline std::vector<float> host_outputs;
 inline std::vector<int> indices;
 
@@ -36,13 +35,10 @@ inline float* device__bias=nullptr;
 inline float* device__nodevals=nullptr;
 inline float* device__preact=nullptr;
 inline float* device__delta=nullptr;
-inline int* batchidx =nullptr;
 //
 inline  int activationInt; //1= tanh,2= relu,3=leakyrelu
 inline __device__ int dactivationint=1;
 inline __device__ float d_lr=0.0f;
-inline __device__ int net_node_in=0;
-inline __device__ int dbatchsize=0;
 
 //
 //helpers
@@ -92,3 +88,4 @@ inline __device__ float dslope(float x)
 	}
 }
 
+void backpropogationbatch(int cb);
