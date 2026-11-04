@@ -1,14 +1,15 @@
 #include "noMlp.h"
 #include "globals.h"
-#include <cuda.h>
+#include "activations.h"
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <iostream>
 #include <random>
 #include <algorithm>
+#include <cmath>
 
 
-__global__ void firstlayer(const int n,int n_in,const float* __restrict__  inputs,const float* __restrict__ weights,const float* __restrict__ bias,float* nodevals,float* preact){
+__global__ void firstlayer(const int n,int n_in,const float* __restrict__  inputs,const float* __restrict__ weights,const float* __restrict__ bias,float* nodevals,float* preact,int activation_type){
   
     extern __shared__ float smem[];
 
@@ -28,12 +29,12 @@ __global__ void firstlayer(const int n,int n_in,const float* __restrict__  input
     }
 
     preact[i]=val;
-    nodevals[i]=activation(val);
+    nodevals[i]=activation(val,activation_type);
      
 }
 
 
-__global__ void hiddenlayers(int n,int n_in,int w,int d,int p,int b,bool isout,const float* __restrict__ weights,const float* __restrict__ bias,float* preact,float* nodevals){
+__global__ void hiddenlayers(int n,int n_in,int w,int d,int p,int b,bool isout,const float* __restrict__ weights,const float* __restrict__ bias,float* preact,float* nodevals,int activation_type){
    extern __shared__ float smem[];
     int tid =threadIdx.x;
     int i =blockIdx.x*blockDim.x+tid;
@@ -46,66 +47,76 @@ __global__ void hiddenlayers(int n,int n_in,int w,int d,int p,int b,bool isout,c
 
     float val=bias[b+i];
     for(int j=0;j<n_in;j++){
-        val+=smem[j]*weights[w+i*n_in+j];
+        val+=smem[j]*weights[w+j*n+i];
     }
     preact[d+i]=val;
-    nodevals[d+i]=isout ? val:activation(val);
+    nodevals[d+i]=isout ? val:activation(val,activation_type);
 }
 
 
-std::vector<float> forwardpass(std::vector<float> inputs){
-   if(model.batching) {
-       printf("nomlp: use nomlp.train_batch(inputs) for batched training or disable batching in initlization \n ");
+
+std::vector<float> forwardpass(noMlp& m, const std::vector<float> &inputs){
+   if(m.modeldata.batching) {
+       std::printf("nomlp: use train_batch() for batched training or disable batching in initialization\n");
        return {};
    }
-    if (host_layerdata.empty()) {
-        std::fprintf(stderr, "cannot run prediction before initializing the network\n");
+    if (m.layers.empty() || m.d_inputs == nullptr || m.d_weights == nullptr ||
+        m.d_bias == nullptr || m.d_nodevals == nullptr || m.d_preact == nullptr) {
+        std::printf("nomlp: initialize the model before running prediction\n");
         return {};
     }
-    if (inputs.size() != static_cast<size_t>(host_layerdata.front().node_in)) {
-        std::fprintf(stderr, "input size does not match the network input size\n");
+    if (inputs.size() != static_cast<size_t>(m.layers.front().node_in)) {
+        std::printf("nomlp: input size does not match the network input size\n");
         return {};
     }
-   cudaError_t err= cudaMemcpy(device_mlp_inputs,inputs.data(), inputs.size() * sizeof(float),cudaMemcpyHostToDevice);
-   geterror("cudaMemcpy inputs to device", err);
-   if (err != cudaSuccess) return {};
-    int n =host_layerdata[0].node_out;
-    int nin =host_layerdata[0].node_in;
+    for (float input : inputs) {
+        if (!std::isfinite(input)) {
+            std::printf("nomlp: inputs must contain finite values\n");
+            return {};
+        }
+    }
+   cudaError_t err= cudaMemcpy(m.d_inputs,inputs.data(), inputs.size() * sizeof(float),cudaMemcpyHostToDevice);
+   if (!geterror("copy inputs to device", err)) return {};
+    int n =m.layers[0].node_out;
+    int nin =m.layers[0].node_in;
 
 
      int threads = n<512?n :512;
     size_t smem_size=nin*sizeof(float);
-    firstlayer<<<blocks(n,threads),threads,smem_size>>>(n,nin,device_mlp_inputs,device__weights,device__bias,device__nodevals,device__preact);
+    firstlayer<<<blocks(n,threads),threads,smem_size>>>(n,nin,m.d_inputs,m.d_weights,m.d_bias,m.d_nodevals,m.d_preact,m.activationInt);
+    if (!geterror("launch first-layer kernel", cudaGetLastError())) return {};
    
 
-    for(int l=1;l<host_mlp_layer_count;l++){
+    for(int l=1;l<m.layers_count;l++){
 
-        n=host_layerdata[l].node_out;
-        nin=host_layerdata[l-1].node_out;
-        int widx=host_layerdata[l].weight_index;
-        int bidx =host_layerdata[l].bias_index;
-        int didx=host_layerdata[l].nodedata_index;
-        int pidx =host_layerdata[l-1].nodedata_index;
-        bool isout= l== host_mlp_layer_count-1;
+        n=m.layers[l].node_out;
+        nin=m.layers[l-1].node_out;
+        int widx=m.layers[l].weight_index;
+        int bidx =m.layers[l].bias_index;
+        int didx=m.layers[l].nodedata_index;
+        int pidx =m.layers[l-1].nodedata_index;
+        bool isout= l== m.layers_count-1;
 
         threads=n<512?n:512;
         size_t smem= nin*sizeof(float);
-        hiddenlayers<<<blocks(n,threads),threads,smem>>>(n,nin,widx,didx,pidx,bidx,isout,device__weights,device__bias,device__preact,device__nodevals);
+        hiddenlayers<<<blocks(n,threads),threads,smem>>>(n,nin,widx,didx,pidx,bidx,isout,m.d_weights,m.d_bias,m.d_preact,m.d_nodevals,m.activationInt);
+        if (!geterror("launch hidden-layer kernel", cudaGetLastError())) return {};
        
     }
-   n= host_layerdata[host_mlp_layer_count-1].nodedata_index;
-   int count=host_layerdata[host_mlp_layer_count -1].node_out;
+   n= m.layers[m.layers_count-1].nodedata_index;
+   int count=m.layers[m.layers_count -1].node_out;
 
-     err =cudaMemcpy(host_outputs.data(),device__nodevals+n,count*sizeof(float),cudaMemcpyDeviceToHost);
-    geterror("cudaMemcpy outputs to host", err);
-    if (err != cudaSuccess) return {};
+
+
+     err =cudaMemcpy(m.host_outputs.data(),m.d_nodevals+n,count*sizeof(float),cudaMemcpyDeviceToHost);
+    if (!geterror("copy outputs to host", err)) return {};
    
-    return host_outputs;
+    return m.host_outputs;
 }
 
 
-std::vector<float> nomlp::pridiction(std::vector<float>& inputs){
-    return forwardpass(inputs);
+std::vector<float> noMlp::pridiction(std::vector<float>& inputs){
+    return forwardpass(*this,inputs);
 }
 
 
