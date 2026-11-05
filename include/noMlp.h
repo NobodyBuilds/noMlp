@@ -52,6 +52,7 @@ public:
 
     float *d_inputs = nullptr;
     float *d_target = nullptr;
+    
 
     float *d_weights = nullptr;
     float *d_bias = nullptr;
@@ -73,10 +74,12 @@ public:
     void init(modelconfig &model);
     void close();
 
-    std::vector<float> pridiction(std::vector<float> &inputs);
+    std::vector<float> prediction(std::vector<float> &inputs);
     float backward(std::vector<float> &targets);
 
     float train_batch(std::vector<float> &inputs, std::vector<float> &targets);
+
+    std::vector<float> inference_batch(std::vector<float> &inputs);
 
     void save_checkpoint();
     void load_checkpoint();

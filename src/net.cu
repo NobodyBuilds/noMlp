@@ -107,7 +107,7 @@ std::vector<float> forwardpass(noMlp& m, const std::vector<float> &inputs){
    int count=m.layers[m.layers_count -1].node_out;
 
 
-
+    m.host_outputs.resize(m.modeldata.node_out);
      err =cudaMemcpy(m.host_outputs.data(),m.d_nodevals+n,count*sizeof(float),cudaMemcpyDeviceToHost);
     if (!geterror("copy outputs to host", err)) return {};
    
@@ -115,7 +115,7 @@ std::vector<float> forwardpass(noMlp& m, const std::vector<float> &inputs){
 }
 
 
-std::vector<float> noMlp::pridiction(std::vector<float>& inputs){
+std::vector<float> noMlp::prediction(std::vector<float>& inputs){
     return forwardpass(*this,inputs);
 }
 

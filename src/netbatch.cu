@@ -11,9 +11,8 @@
 #include <cmath>
 #include <exception>
 
-
 __global__ void getloss(int curBatch, const float *dNodeData, const float *dTarget,
-	int d, int outputCount, int nodedatasize,float* loss)
+						int d, int outputCount, int nodedatasize, float *loss)
 {
 	if (blockIdx.x != 0 || threadIdx.x != 0)
 		return;
@@ -30,12 +29,11 @@ __global__ void getloss(int curBatch, const float *dNodeData, const float *dTarg
 	}
 }
 
-__global__ void firstlayerbatch(const int n,const  int n_in, const int w, const float *__restrict__ input,
-						   const float *__restrict__ dWeights, const float *__restrict__ dBias, float *preact, float *dNodeData,
-						 const  int nodedatasize, int activation_type)
+__global__ void firstlayerbatch(const int n, const int n_in, const int w, const float *__restrict__ input,
+								const float *__restrict__ dWeights, const float *__restrict__ dBias, float *preact, float *dNodeData,
+								const int nodedatasize, int activation_type)
 {
 	extern __shared__ float smem[];
-
 
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int b = blockIdx.y;
@@ -52,7 +50,7 @@ __global__ void firstlayerbatch(const int n,const  int n_in, const int w, const 
 	dNodeData[off + i] = activation(val, activation_type);
 }
 
-__global__ void solvelayersbatch(const int n,const int nin,const int w,const int d,const int b,const int p, bool isout, const float *__restrict__ dWeights, const float *__restrict__ dBias, float *preact, float *dNodeData,const int nodedatasize, int activation_type)
+__global__ void solvelayersbatch(const int n, const int nin, const int w, const int d, const int b, const int p, bool isout, const float *__restrict__ dWeights, const float *__restrict__ dBias, float *preact, float *dNodeData, const int nodedatasize, int activation_type)
 {
 
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -72,21 +70,22 @@ __global__ void solvelayersbatch(const int n,const int nin,const int w,const int
 	dNodeData[off + i] = isout ? val : activation(val, activation_type);
 }
 
-bool runnet(int curBatch, noMlp& m)
+bool runnet(int curBatch, noMlp &m)
 {
-	int n=m.layers[0].node_out;
-	int threads = n>512?512:n;
+	int n = m.layers[0].node_out;
+	int threads = n > 512 ? 512 : n;
 
 	int l1blocks = (n + threads - 1) / threads;
 	int w = m.layers[0].weight_index;
 	dim3 grid(l1blocks, curBatch);
 
 	firstlayerbatch<<<grid, threads>>>(m.layers[0].node_out, m.layers[0].node_in, w, m.d_inputs, m.d_weights, m.d_bias, m.d_preact, m.d_nodevals, m.nodedatabuffersize, m.activationInt);
-	if (!geterror("launch first batch layer", cudaGetLastError())) return false;
+	if (!geterror("launch first batch layer", cudaGetLastError()))
+		return false;
 
 	for (int l = 1; l < m.layers.size(); l++)
 	{
-		threads =m.layers[l].node_out>512?512:m.layers[l].node_out;
+		threads = m.layers[l].node_out > 512 ? 512 : m.layers[l].node_out;
 		int blocks = (m.layers[l].node_out + threads - 1) / threads;
 		int shared_bytes = m.layers[l].node_in * sizeof(float);
 
@@ -99,16 +98,17 @@ bool runnet(int curBatch, noMlp& m)
 		bool isout = (l == m.layers.size() - 1);
 		dim3 grid2(blocks, curBatch);
 		solvelayersbatch<<<grid2, threads>>>(m.layers[l].node_out, nin, wl, d, b, p, isout, m.d_weights, m.d_bias, m.d_preact, m.d_nodevals, m.nodedatabuffersize, m.activationInt);
-		if (!geterror("launch batch layer", cudaGetLastError())) return false;
+		if (!geterror("launch batch layer", cudaGetLastError()))
+			return false;
 	}
 
 	const layerstruct &outputLayer = m.layers[m.layers.size() - 1];
-	getloss<<<1, 1>>>(curBatch, m.d_nodevals, m.d_target, outputLayer.nodedata_index, outputLayer.node_out, m.nodedatabuffersize,m.loss);
+	getloss<<<1, 1>>>(curBatch, m.d_nodevals, m.d_target, outputLayer.nodedata_index, outputLayer.node_out, m.nodedatabuffersize, m.loss);
 	return geterror("launch batch loss", cudaGetLastError());
 }
 
 std::mt19937 shuffleRng(1234);
-void shuffleindices(noMlp& m)
+void shuffleindices(noMlp &m)
 {
 	m.indices.resize(m.modeldata.datasize);
 
@@ -118,7 +118,7 @@ void shuffleindices(noMlp& m)
 	}
 	std::shuffle(m.indices.begin(), m.indices.end(), shuffleRng);
 }
-
+static bool first_itr = true;
 float noMlp::train_batch(std::vector<float> &inputs, std::vector<float> &targets)
 {
 
@@ -128,9 +128,9 @@ float noMlp::train_batch(std::vector<float> &inputs, std::vector<float> &targets
 		return 0.0f;
 	}
 	if (layers.empty() || modeldata.datasize <= 0 || modeldata.batchsize <= 0 ||
-	    d_inputs == nullptr || d_target == nullptr || d_weights == nullptr ||
-	    d_bias == nullptr || d_nodevals == nullptr || d_preact == nullptr ||
-	    d_delta == nullptr || loss == nullptr || adam_weights == nullptr || adam_bias == nullptr)
+		d_inputs == nullptr || d_target == nullptr || d_weights == nullptr ||
+		d_bias == nullptr || d_nodevals == nullptr || d_preact == nullptr ||
+		d_delta == nullptr || loss == nullptr || adam_weights == nullptr || adam_bias == nullptr)
 	{
 		std::printf("nomlp: initialize the model and its buffers before train_batch()\n");
 		return 0.0f;
@@ -142,36 +142,49 @@ float noMlp::train_batch(std::vector<float> &inputs, std::vector<float> &targets
 		std::printf("nomlp: train_batch expects datasize * node_in inputs and datasize * node_out targets\n");
 		return 0.0f;
 	}
-	for (float input : inputs) {
-		if (!std::isfinite(input)) {
-			std::printf("nomlp: inputs must contain finite values\n");
-			return 0.0f;
-		}
-	}
-	for (float target : targets)
-
+	if (first_itr)
 	{
-		if (!std::isfinite(target))
+		for (float input : inputs)
 		{
-			std::printf("nomlp: targets must contain finite values\n");
-			return 0.0f;
+			if (!std::isfinite(input))
+			{
+				std::printf("nomlp: inputs must contain finite values\n");
+				return 0.0f;
+			}
 		}
+		for (float target : targets)
+
+		{
+			if (!std::isfinite(target))
+			{
+				std::printf("nomlp: targets must contain finite values\n");
+				return 0.0f;
+			}
+		}
+		first_itr = false;//run data checking only once to avoid performance penalty on subsequent calls
 	}
 	int numbatches = (modeldata.datasize + modeldata.batchsize - 1) / modeldata.batchsize;
-	try {
+	try
+	{
 		shuffleindices(*this);
-	} catch (const std::exception &error) {
+	}
+	catch (const std::exception &error)
+	{
 		std::printf("nomlp: could not allocate batch indices: %s\n", error.what());
 		return 0.0f;
 	}
-	if (!geterror("reset batch loss", cudaMemset(loss, 0, sizeof(float)))) return 0.0f;
+	if (!geterror("reset batch loss", cudaMemset(loss, 0, sizeof(float))))
+		return 0.0f;
 	float h_loss = 0.0f;
 	std::vector<float> batchInputs;
 	std::vector<float> batchTargets;
-	try {
+	try
+	{
 		batchInputs.resize(static_cast<size_t>(modeldata.batchsize) * modeldata.node_in);
 		batchTargets.resize(static_cast<size_t>(modeldata.batchsize) * modeldata.node_out);
-	} catch (const std::exception &error) {
+	}
+	catch (const std::exception &error)
+	{
 		std::printf("nomlp: could not allocate batch buffers: %s\n", error.what());
 		return 0.0f;
 	}
@@ -193,19 +206,22 @@ float noMlp::train_batch(std::vector<float> &inputs, std::vector<float> &targets
 		const size_t targetBytes = static_cast<size_t>(curbatch) * modeldata.node_out * sizeof(float);
 
 		cudaError_t err = cudaMemcpy(d_inputs, batchInputs.data(), inputBytes, cudaMemcpyHostToDevice);
-		if (!geterror("copy input batch to device", err)) return 0.0f;
+		if (!geterror("copy input batch to device", err))
+			return 0.0f;
 
 		err = cudaMemcpy(d_target, batchTargets.data(), targetBytes, cudaMemcpyHostToDevice);
-		if (!geterror("copy target batch to device", err)) return 0.0f;
+		if (!geterror("copy target batch to device", err))
+			return 0.0f;
 
+		if (!runnet(curbatch, *this))
+			return 0.0f;
 
-		if (!runnet(curbatch, *this)) return 0.0f;
-
-		if (!backpropogationbatch(curbatch, *this)) return 0.0f;
-
+		if (!backpropogationbatch(curbatch, *this))
+			return 0.0f;
 	}
-	if (!geterror("batch training synchronization", cudaDeviceSynchronize())) return 0.0f;
-	h_loss=*loss;
+	if (!geterror("batch training synchronization", cudaDeviceSynchronize()))
+		return 0.0f;
+	h_loss = *loss;
 
 	return h_loss / modeldata.datasize;
 }
