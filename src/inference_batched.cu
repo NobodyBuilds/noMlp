@@ -6,6 +6,25 @@
 #include "activations.h"
 #include <algorithm>
 
+/*
+==BENCHMARK DETAILS==
+-for inference_batch();
+
+before optimizations:
+
+	batchsize=64  :0.03sec/epoch
+	batchsize=128 :0.02sec/epoch
+	batchsize=256 :0.03sec/epoch
+	batchsize=512 :0.027sec/epoch
+	batchsize=1024:0.028sec/epoch
+
+	dataset size =48,000 
+	network 784->512->256->128->64->20
+
+
+after optimizations:
+*/
+
 __global__ void firstlayerbatchinf(const int n, const int n_in, const int w, const float *__restrict__ input,
 								   const float *__restrict__ dWeights, const float *__restrict__ dBias, float *dNodeData,
 								   const int nodedatasize, int activation_type)

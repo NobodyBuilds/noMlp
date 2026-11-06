@@ -145,6 +145,8 @@ void noMlp::close(){
     }
     clearadam(*this);
 
+    cudaFree(column_major_weights);
+
     std::vector<layerstruct>().swap(layers);
     std::vector<float>().swap(host_outputs);
     std::vector<float>().swap(host_weights_array);

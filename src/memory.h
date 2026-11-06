@@ -7,6 +7,7 @@ inline bool allocatemlpmemory(noMlp &m)
 {
     modelconfig &model = m.modeldata;
     if (!geterror("cudaMalloc device weights", cudaMalloc(&m.d_weights, m.weightbuffersize * sizeof(float)))) return false;
+    if (!geterror("cudaMalloc device column-major weights", cudaMalloc(&m.column_major_weights, m.weightbuffersize * sizeof(float)))) return false;
     if (!geterror("cudaMalloc device bias", cudaMalloc(&m.d_bias, m.biasbuffersize * sizeof(float)))) return false;
     if (!geterror("cudaMalloc device node values", cudaMalloc(&m.d_nodevals, static_cast<size_t>(model.batchsize) * m.nodedatabuffersize * sizeof(float)))) return false;
     if (!geterror("cudaMalloc device preactivations", cudaMalloc(&m.d_preact, static_cast<size_t>(model.batchsize) * m.nodedatabuffersize * sizeof(float)))) return false;

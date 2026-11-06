@@ -10,6 +10,20 @@
 
 #include <cmath>
 
+__global__ void convertr2c(float *rw, float *cw, int n, int l1w, int l_out, int lnin)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n)
+        return;
+    // row = l1w + i * l1_out
+    // col =  l1w + k * l1_nin + i
+    int rows = lnin;
+    int row = i % rows;
+    int col = i / rows;
+
+    cw[i] = rw[l1w + (row * l_out + col)];
+}
+
 
 __global__ void compute_delta(int n, int d, int l1_nout, int l1w, int l1_nin,
 	int l1d, bool outlayer, const float *__restrict__ nodedata, float *dDelta,
@@ -30,9 +44,10 @@ __global__ void compute_delta(int n, int d, int l1_nout, int l1w, int l1_nin,
 	else
 	{
 		float sum = 0.0f;
+#pragma unroll 4
 		for (int k = 0; k < l1_nout; k++)
 		{
-			sum += dWeights[l1w + i * l1_nout + k] * dDelta[b * nodedatasize + l1d + k];
+			sum += dWeights[k * l1_nin + i] * dDelta[b * nodedatasize + l1d + k];
 		}
 		dDelta[b * nodedatasize + d + i] = sum * dslope(dpreact[b * nodedatasize + d + i], activation_type);
 	}
@@ -78,15 +93,16 @@ bool backpropogationbatch(int cb, noMlp& m)
 		std::printf("nomlp: invalid model state for batch backpropagation\n");
 		return false;
 	}
-
-	int threads = 256;
+	
+        
+		int threads = 256;
 	for (int l = m.layers_count - 1; l >= 0; l--)
 	{
-
+		
 		int d = m.layers[l].nodedata_index;
 		int n = m.layers[l].node_out;
 		int l1out = 0, l1w = 0, l1d = 0, l1nin = 0;
-
+		
 		if (l < m.layers_count - 1)
 		{
 			l1out = m.layers[l + 1].node_out;
@@ -94,12 +110,17 @@ bool backpropogationbatch(int cb, noMlp& m)
 			l1d = m.layers[l + 1].nodedata_index;
 			l1nin = m.layers[l + 1].node_in;
 		}
-
+		
 		bool outlayer = (l == m.layers_count - 1) ? 1 : 0;
 
+		if(!outlayer){
+
+			size_t layer_weight_size = l1nin * l1out;	
+			convertr2c<<<(layer_weight_size + 255) / 256, 256 >>>(m.d_weights, m.column_major_weights, layer_weight_size, m.layers[l + 1].weight_index, m.layers[l + 1].node_out, l1nin);
+		}
 		int blocks = (n + threads - 1) / threads;
 		dim3 deltaGrid(blocks, cb);
-		compute_delta<<<deltaGrid, threads>>>(n, d, l1out, l1w, l1nin, l1d, outlayer, m.d_nodevals, m.d_delta, m.d_weights, m.d_target, m.d_preact, m.nodedatabuffersize, m.activationInt);
+		compute_delta<<<deltaGrid, threads>>>(n, d, l1out, l1w, l1nin, l1d, outlayer, m.d_nodevals, m.d_delta, m.column_major_weights, m.d_target, m.d_preact, m.nodedatabuffersize, m.activationInt);
 		if (!geterror("launch batch delta kernel", cudaGetLastError())) return false;
 	}
 

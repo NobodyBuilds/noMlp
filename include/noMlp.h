@@ -55,6 +55,7 @@ public:
     
 
     float *d_weights = nullptr;
+    float* column_major_weights=nullptr;
     float *d_bias = nullptr;
 
     float *d_nodevals = nullptr;

@@ -11,6 +11,26 @@
 #include <cmath>
 #include <exception>
 
+/*
+==BENCHMARK DETAILS==
+-for train_batch();
+
+before optimizations:
+
+	batchsize=64  :4.30sec/epoch
+	batchsize=128 :3.70sec/epoch
+	batchsize=256 :3.40sec/epoch
+	batchsize=512 :4.02sec/epoch
+	batchsize=1024:4.36sec/epoch
+
+	dataset size =48,000 
+	network 784->512->256->128->64->20
+
+
+after optimizations:
+*/
+
+
 __global__ void getloss(int curBatch, const float *dNodeData, const float *dTarget,
 						int d, int outputCount, int nodedatasize, float *loss)
 {
@@ -118,10 +138,15 @@ void shuffleindices(noMlp &m)
 	}
 	std::shuffle(m.indices.begin(), m.indices.end(), shuffleRng);
 }
+
+
 static bool first_itr = true;
 float noMlp::train_batch(std::vector<float> &inputs, std::vector<float> &targets)
 {
 
+	
+		
+	
 	if (!modeldata.batching)
 	{
 		std::printf("nomlp: enable batching in noMlp::init()\n");
