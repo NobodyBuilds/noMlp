@@ -48,6 +48,8 @@ public:
     std::vector<float> host_weights_array;
     std::vector<float> host_bias_array;
     std::vector<int> indices;
+    	std::vector<float> batchInputs;
+	std::vector<float> batchTargets;
     int layers_count = 0;
 
     float *d_inputs = nullptr;
@@ -63,7 +65,7 @@ public:
     float *d_delta = nullptr;
     float2 *adam_weights = nullptr; // x= m,y=v;
     float2 *adam_bias = nullptr;    // x= m,y=v;
-    float* loss=nullptr;
+  
     int adam_step = 1;
     int weightbuffersize = 0;
     int biasbuffersize = 0;

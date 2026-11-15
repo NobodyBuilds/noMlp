@@ -54,7 +54,7 @@ void noMlp::init(modelconfig& model ){
     close();
     if (d_inputs != nullptr || d_target != nullptr || d_weights != nullptr ||
         d_bias != nullptr || d_nodevals != nullptr || d_preact != nullptr ||
-        d_delta != nullptr || loss != nullptr || adam_weights != nullptr ||
+        d_delta != nullptr || adam_weights != nullptr ||
         adam_bias != nullptr) {
         std::printf("nomlp: could not release existing buffers; initialization stopped\n");
         return;
@@ -138,11 +138,7 @@ void noMlp::close(){
         geterror("cudaFree device deltas", err);
         if (err == cudaSuccess) d_delta = nullptr;
     }
-    if (loss != nullptr) {
-        const cudaError_t err = cudaFree(loss);
-        geterror("cudaFree loss", err);
-        if (err == cudaSuccess) loss = nullptr;
-    }
+    
     clearadam(*this);
 
     cudaFree(column_major_weights);

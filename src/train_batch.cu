@@ -23,16 +23,15 @@ before optimizations:
 	batchsize=512 :4.02sec/epoch
 	batchsize=1024:4.36sec/epoch
 
-	dataset size =48,000 
+	dataset size =48,000
 	network 784->512->256->128->64->20
 
 
 after optimizations:
 */
-
-
+__device__ float loss=0.0f;
 __global__ void getloss(int curBatch, const float *dNodeData, const float *dTarget,
-						int d, int outputCount, int nodedatasize, float *loss)
+						int d, int outputCount, int nodedatasize)
 {
 	if (blockIdx.x != 0 || threadIdx.x != 0)
 		return;
@@ -44,7 +43,7 @@ __global__ void getloss(int curBatch, const float *dNodeData, const float *dTarg
 		for (int i = 0; i < outputCount; ++i)
 		{
 			const float difference = dNodeData[outputOffset + i] - dTarget[targetOffset + i];
-			*loss += 0.5f * difference * difference;
+			loss += 0.5f * difference * difference;
 		}
 	}
 }
@@ -123,7 +122,7 @@ bool runnet(int curBatch, noMlp &m)
 	}
 
 	const layerstruct &outputLayer = m.layers[m.layers.size() - 1];
-	getloss<<<1, 1>>>(curBatch, m.d_nodevals, m.d_target, outputLayer.nodedata_index, outputLayer.node_out, m.nodedatabuffersize, m.loss);
+	getloss<<<1, 1>>>(curBatch, m.d_nodevals, m.d_target, outputLayer.nodedata_index, outputLayer.node_out, m.nodedatabuffersize);
 	return geterror("launch batch loss", cudaGetLastError());
 }
 
@@ -139,36 +138,25 @@ void shuffleindices(noMlp &m)
 	std::shuffle(m.indices.begin(), m.indices.end(), shuffleRng);
 }
 
-
 static bool first_itr = true;
 float noMlp::train_batch(std::vector<float> &inputs, std::vector<float> &targets)
 {
 
-	
-		
-	
 	if (!modeldata.batching)
 	{
 		std::printf("nomlp: enable batching in noMlp::init()\n");
 		return 0.0f;
 	}
-	if (layers.empty() || modeldata.datasize <= 0 || modeldata.batchsize <= 0 ||
-		d_inputs == nullptr || d_target == nullptr || d_weights == nullptr ||
-		d_bias == nullptr || d_nodevals == nullptr || d_preact == nullptr ||
-		d_delta == nullptr || loss == nullptr || adam_weights == nullptr || adam_bias == nullptr)
-	{
-		std::printf("nomlp: initialize the model and its buffers before train_batch()\n");
-		return 0.0f;
-	}
-	const size_t expectedInputCount = static_cast<size_t>(modeldata.datasize) * modeldata.node_in;
-	const size_t expectedTargetCount = static_cast<size_t>(modeldata.datasize) * modeldata.node_out;
-	if (inputs.size() != expectedInputCount || targets.size() != expectedTargetCount)
-	{
-		std::printf("nomlp: train_batch expects datasize * node_in inputs and datasize * node_out targets\n");
-		return 0.0f;
-	}
+
 	if (first_itr)
 	{
+		const size_t expectedInputCount = static_cast<size_t>(modeldata.datasize) * modeldata.node_in;
+		const size_t expectedTargetCount = static_cast<size_t>(modeldata.datasize) * modeldata.node_out;
+		if (inputs.size() != expectedInputCount || targets.size() != expectedTargetCount)
+		{
+			std::printf("nomlp: train_batch expects datasize * node_in inputs and datasize * node_out targets\n");
+			return 0.0f;
+		}
 		for (float input : inputs)
 		{
 			if (!std::isfinite(input))
@@ -186,23 +174,8 @@ float noMlp::train_batch(std::vector<float> &inputs, std::vector<float> &targets
 				return 0.0f;
 			}
 		}
-		first_itr = false;//run data checking only once to avoid performance penalty on subsequent calls
-	}
-	int numbatches = (modeldata.datasize + modeldata.batchsize - 1) / modeldata.batchsize;
-	try
-	{
-		shuffleindices(*this);
-	}
-	catch (const std::exception &error)
-	{
-		std::printf("nomlp: could not allocate batch indices: %s\n", error.what());
-		return 0.0f;
-	}
-	if (!geterror("reset batch loss", cudaMemset(loss, 0, sizeof(float))))
-		return 0.0f;
-	float h_loss = 0.0f;
-	std::vector<float> batchInputs;
-	std::vector<float> batchTargets;
+
+	
 	try
 	{
 		batchInputs.resize(static_cast<size_t>(modeldata.batchsize) * modeldata.node_in);
@@ -213,6 +186,26 @@ float noMlp::train_batch(std::vector<float> &inputs, std::vector<float> &targets
 		std::printf("nomlp: could not allocate batch buffers: %s\n", error.what());
 		return 0.0f;
 	}
+
+		 // run data checking only once to avoid performance penalty on subsequent calls
+	}
+
+
+	int numbatches = (modeldata.datasize + modeldata.batchsize - 1) / modeldata.batchsize;
+	try
+	{
+		shuffleindices(*this);
+	}
+	catch (const std::exception &error)
+	{
+		std::printf("nomlp: could not allocate batch indices: %s\n", error.what());
+		return 0.0f;
+	}
+	float zero=0.0f;
+	if (!geterror("reset batch loss",cudaMemcpyToSymbol(loss, &zero, sizeof(float))))
+		return 0.0f;
+	float h_loss = 0.0f;
+	
 	for (int step = 0; step < numbatches; step++)
 	{
 		int curbatch = std::min(modeldata.batchsize, modeldata.datasize - step * modeldata.batchsize);
@@ -238,15 +231,18 @@ float noMlp::train_batch(std::vector<float> &inputs, std::vector<float> &targets
 		if (!geterror("copy target batch to device", err))
 			return 0.0f;
 
-		if (!runnet(curbatch, *this))
-			return 0.0f;
+		runnet(curbatch, *this);
+			
 
-		if (!backpropogationbatch(curbatch, *this))
-			return 0.0f;
+		backpropogationbatch(curbatch, *this);
+		
 	}
-	if (!geterror("batch training synchronization", cudaDeviceSynchronize()))
+		
+	h_loss = 0.0f;
+if (!geterror("memcpy batch loss",cudaMemcpyFromSymbol(&zero, loss, sizeof(float))))
 		return 0.0f;
-	h_loss = *loss;
+
+	if(first_itr)first_itr=false;
 
 	return h_loss / modeldata.datasize;
 }

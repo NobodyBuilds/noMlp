@@ -53,33 +53,60 @@ __global__ void compute_delta(int n, int d, int l1_nout, int l1w, int l1_nin,
 	}
 }
 
-__global__ void tuneweights(int n, int nin, int l, int l1d, int lw, int lsize,
-	int d, int lb, const float *__restrict__ ddata,
-	const float *__restrict__ dNodeData, float *dWeights, float *dDelta,
-	float *dBias, int nodedatasize, int curbatch, float2 *adam_weights,
-	float2 *adam_bias, float4 beta,float d_lr)
+__global__ void proposed_tunebias(
+    int n, int d, int lb, const float *dDelta, float *dBias,
+    int nodedatasize, int curbatch, float2 *adam_bias, float4 beta, float d_lr)
 {
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i >= n)
-		return;
+    extern __shared__ float smem[];
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    const int y = threadIdx.y;
 
-	float biasgrad = 0.0f;
-	for (int b = 0; b < curbatch; b++)
-		biasgrad += dDelta[b * nodedatasize + d + i];
-	//dBias[lb + i] -= d_lr * (biasgrad / curbatch);
-    adam_update(dBias[lb+i],adam_bias[lb+i],biasgrad/curbatch,d_lr,beta);
-	for (int k = 0; k < nin; k++) 
-	{
-		float wgrad = 0.0f;
-		for (int b = 0; b < curbatch; b++)
-		{
-			int off = b * nodedatasize;
-			float nodeVal = (l == 0) ? ddata[b * nin + k] : dNodeData[off + l1d + k];
-			wgrad += dDelta[off + d + i] * nodeVal;
-		}
-		const int weightIndex =lw + k * n + i ;
-		adam_update(dWeights[weightIndex], adam_weights[weightIndex], wgrad / curbatch, d_lr, beta);
-	}
+    float sum = 0.0f;
+    if (i < n)
+    {
+        for (int b = y; b < curbatch; b += blockDim.y)
+            sum += dDelta[b * nodedatasize + d + i];
+        smem[y * blockDim.x + threadIdx.x] = sum;
+    }
+
+    __syncthreads();
+
+    if (y == 0 && i < n)
+    {
+        float biasgrad = 0.0f;
+#pragma unroll 8
+        for (int k = 0; k < blockDim.y; ++k)
+            biasgrad += smem[k * blockDim.x + threadIdx.x];
+
+        adam_update(dBias[lb + i], adam_bias[lb + i], biasgrad / curbatch,
+                    d_lr, beta);
+    }
+}
+
+__global__ void proposed_tuneweights(
+    int n, int nin, int l, int lw, int d, int l1d,
+    const float *dDelta, const float *ddata, float *dWeights,
+    const float *dNodeData, int nodedatasize, int curbatch,
+    float2 *adam_weights, float4 beta, float d_lr)
+{
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    const int k = blockIdx.y * blockDim.y + threadIdx.y;
+    if (i >= n || k >= nin)
+        return;
+
+    float wgrad = 0.0f;
+    for (int b = 0; b < curbatch; ++b)
+    {
+        const int offset = b * nodedatasize;
+        const float nodeValue = (l == 0)
+                                    ? ddata[b * nin + k]
+                                    : dNodeData[offset + l1d + k];
+        wgrad += dDelta[offset + d + i] * nodeValue;
+    }
+
+    const int weightIndex = lw + k * n + i;
+    adam_update(dWeights[weightIndex], adam_weights[weightIndex],
+                wgrad / curbatch, d_lr, beta);
 }
 
 
@@ -124,19 +151,34 @@ bool backpropogationbatch(int cb, noMlp& m)
 		if (!geterror("launch batch delta kernel", cudaGetLastError())) return false;
 	}
 
+	float betat2 = 1.0f / (1.0f - powf(beta2, m.adam_step));
+	float betat1 = 1.0f / (1.0f - powf(beta1, m.adam_step));
+	const float4 beta={beta1,beta2,betat1,betat2};
 	for (int l = m.layers_count - 1; l >= 0; l--)
 	{
-		float betat1 = 1.0f / (1.0f - powf(beta1, m.adam_step));
-		float betat2 = 1.0f / (1.0f - powf(beta2, m.adam_step));
-		int blocks = (m.layers[l].node_out + threads - 1) / threads;
-		int nin = m.layers[l].node_in;
-		int l1d = (l == 0) ? 0 : m.layers[l - 1].nodedata_index;
-		int lw = m.layers[l].weight_index;
-		int lsize = (l == 0) ? m.modeldata.node_in : m.layers[l].node_in;
-		int d = m.layers[l].nodedata_index;
-		int lb = m.layers[l].bias_index;
-		tuneweights<<<blocks, threads>>>(m.layers[l].node_out, nin, l, l1d, lw, lsize, d, lb, m.d_inputs, m.d_nodevals, m.d_weights, m.d_delta, m.d_bias, m.nodedatabuffersize, cb, m.adam_weights, m.adam_bias, {beta1, beta2, betat1, betat2}, m.modeldata.lr);
-		if (!geterror("launch batch weight-update kernel", cudaGetLastError())) return false;
+		 const int nin = m.layers[l].node_in;
+        const int l1d = l == 0 ? 0 : m.layers[l - 1].nodedata_index;
+        const int lw = m.layers[l].weight_index;
+        const int d = m.layers[l].nodedata_index;
+        const int lb = m.layers[l].bias_index;
+
+        const dim3 biasThreads(32, 16);
+        const int biasBlocks = (m.layers[l].node_out + biasThreads.x - 1) / biasThreads.x;
+        const std::size_t biasShared =
+            static_cast<std::size_t>(biasThreads.x) * biasThreads.y * sizeof(float);
+        proposed_tunebias<<<biasBlocks, biasThreads, biasShared>>>(
+            m.layers[l].node_out, d, lb, m.d_delta, m.d_bias,
+            m.nodedatabuffersize, cb, m.adam_bias, beta, m.modeldata.lr);
+
+        const dim3 weightThreads(32, 32);
+        const dim3 weightBlocks(
+            (m.layers[l].node_out + weightThreads.x - 1) / weightThreads.x,
+            (nin + weightThreads.y - 1) / weightThreads.y);
+        proposed_tuneweights<<<weightBlocks, weightThreads>>>(
+            m.layers[l].node_out, nin, l, lw, d, l1d,
+            m.d_delta, m.d_inputs, m.d_weights, m.d_nodevals,
+            m.nodedatabuffersize, cb, m.adam_weights, beta, m.modeldata.lr);
+if (!geterror("launch batch weight-update kernel", cudaGetLastError())) return false;
 	}
     m.adam_step++;
 	return true;

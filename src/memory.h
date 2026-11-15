@@ -22,7 +22,6 @@ inline bool allocatemlpmemory(noMlp &m)
     if (!geterror("cudaMemcpy weights to device", cudaMemcpy(m.d_weights, m.host_weights_array.data(), m.weightbuffersize * sizeof(float), cudaMemcpyHostToDevice))) return false;
     if (!geterror("cudaMemcpy bias to device", cudaMemcpy(m.d_bias, m.host_bias_array.data(), m.biasbuffersize * sizeof(float), cudaMemcpyHostToDevice))) return false;
 
-    if (!geterror("cudaMallocManaged device loss", cudaMallocManaged(&m.loss, sizeof(float)))) return false;
-    if (!geterror("cudaMemset device loss", cudaMemset(m.loss, 0, sizeof(float)))) return false;
+  
     return true;
 }
