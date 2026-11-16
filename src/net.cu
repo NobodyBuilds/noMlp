@@ -7,6 +7,7 @@
 #include <random>
 #include <algorithm>
 #include <cmath>
+#include "softmax.cuh"
 
 
 __global__ void firstlayer(const int n,int n_in,const float* __restrict__  inputs,const float* __restrict__ weights,const float* __restrict__ bias,float* nodevals,float* preact,int activation_type){
@@ -103,6 +104,11 @@ std::vector<float> forwardpass(noMlp& m, const std::vector<float> &inputs){
         if (!geterror("launch hidden-layer kernel", cudaGetLastError())) return {};
        
     }
+    if(m.modeldata.output_mode==outputmode::softmaxCrossEntrophy){
+			applySoftmax(m,1);
+		}
+
+
    n= m.layers[m.layers_count-1].nodedata_index;
    int count=m.layers[m.layers_count -1].node_out;
 

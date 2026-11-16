@@ -23,7 +23,10 @@ struct layerstruct
     int bias_index;
     int nodedata_index;
 };
-
+enum class outputmode{
+    linearMse,
+    softmaxCrossEntrophy
+};
 struct modelconfig
 {
     int node_in = 0;
@@ -31,7 +34,7 @@ struct modelconfig
     float lr = 0.0f;
     int datasize = 0;
     bool batching = false;
-
+    outputmode output_mode=outputmode::linearMse;
     int batchsize = 1;
     std::string_view activation = "tanh";
     const char *checkpoint_adrs = nullptr;

@@ -5,6 +5,7 @@
 #include <vector>
 #include "activations.h"
 #include <algorithm>
+#include "softmax.cuh"
 
 /*
 ==BENCHMARK DETAILS==
@@ -157,6 +158,10 @@ std::vector<float> noMlp::inference_batch(std::vector<float> &inputs)
 
 		if (!runnetinf(curbatch, *this))
 			return {};
+
+			if(this->modeldata.output_mode==outputmode::softmaxCrossEntrophy){
+			applySoftmax(*this,curbatch);
+		}
 
 		// after each batch inference, copy the outputs back to host_outputs
 

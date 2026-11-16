@@ -10,6 +10,7 @@
 #include <random>
 #include <cmath>
 #include <exception>
+#include "softmax.cuh"
 
 /*
 ==BENCHMARK DETAILS==
@@ -31,21 +32,28 @@ after optimizations:
 */
 __device__ float loss=0.0f;
 __global__ void getloss(int curBatch, const float *dNodeData, const float *dTarget,
-						int d, int outputCount, int nodedatasize)
+						int d, int outputCount, int nodedatasize,bool issoftmax)
 {
 	if (blockIdx.x != 0 || threadIdx.x != 0)
 		return;
 
-	for (int b = 0; b < curBatch; ++b)
-	{
-		const int outputOffset = b * nodedatasize + d;
-		const int targetOffset = b * outputCount;
-		for (int i = 0; i < outputCount; ++i)
-		{
-			const float difference = dNodeData[outputOffset + i] - dTarget[targetOffset + i];
-			loss += 0.5f * difference * difference;
-		}
-	}
+	for (int b = 0; b < curBatch; ++b) {
+        int off = b * nodedatasize + d;
+        int targetOff = b * outputCount;
+
+        for (int i = 0; i < outputCount; ++i) {
+            float p = dNodeData[off + i];
+            float y = dTarget[targetOff + i];
+
+            if (issoftmax) {
+                loss += -y * logf(fmaxf(p, 1e-7f));
+            }
+            else {
+                float diff = p - y;
+                loss += 0.5f * diff * diff;
+            }
+        }
+    }
 }
 
 __global__ void firstlayerbatch(const int n, const int n_in, const int w, const float *__restrict__ input,
@@ -121,10 +129,21 @@ bool runnet(int curBatch, noMlp &m)
 			return false;
 	}
 
+	if(m.modeldata.output_mode==outputmode::softmaxCrossEntrophy){
+			applySoftmax(m,curBatch);
+		}
+
+
 	const layerstruct &outputLayer = m.layers[m.layers.size() - 1];
-	getloss<<<1, 1>>>(curBatch, m.d_nodevals, m.d_target, outputLayer.nodedata_index, outputLayer.node_out, m.nodedatabuffersize);
+	bool issoftmax =m.modeldata.output_mode == outputmode::softmaxCrossEntrophy;
+	getloss<<<1, 1>>>(curBatch, m.d_nodevals, m.d_target, outputLayer.nodedata_index, outputLayer.node_out, m.nodedatabuffersize,issoftmax);
 	return geterror("launch batch loss", cudaGetLastError());
 }
+
+
+
+
+
 
 std::mt19937 shuffleRng(1234);
 void shuffleindices(noMlp &m)
@@ -233,13 +252,14 @@ float noMlp::train_batch(std::vector<float> &inputs, std::vector<float> &targets
 
 		runnet(curbatch, *this);
 			
+		
 
 		backpropogationbatch(curbatch, *this);
 		
 	}
 		
 	h_loss = 0.0f;
-if (!geterror("memcpy batch loss",cudaMemcpyFromSymbol(&zero, loss, sizeof(float))))
+if (!geterror("memcpy batch loss",cudaMemcpyFromSymbol(&h_loss, loss, sizeof(float))))
 		return 0.0f;
 
 	if(first_itr)first_itr=false;

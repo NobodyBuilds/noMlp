@@ -142,8 +142,12 @@ static float backpropogation(noMlp& m, const std::vector<float> &targets)
 
 	for (int i = 0; i < m.modeldata.node_out; ++i)
 	{
+		if(m.modeldata.output_mode ==outputmode::softmaxCrossEntrophy){
+
+			loss+= -targets[i]*logf(fmaxf(m.host_outputs[i], 1e-7f));
+		}else{
 		const float difference = m.host_outputs[i] - targets[i];
-		loss += 0.5f * difference * difference;
+		loss += 0.5f * difference * difference;}
 	}
 
 	return loss;
