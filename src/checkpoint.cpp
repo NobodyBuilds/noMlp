@@ -92,7 +92,7 @@ void noMlp::save_checkpoint()
     if (modeldata.checkpoint_adrs == nullptr || *modeldata.checkpoint_adrs == '\0' ||
         d_weights == nullptr || d_bias == nullptr || adam_weights == nullptr || adam_bias == nullptr)
     {
-        std::printf("nomlp: set a checkpoint address and initialize the model before saving\n");
+        logerror("nomlp: set a checkpoint address and initialize the model before saving\n");
         return;
     }
 
@@ -101,7 +101,7 @@ void noMlp::save_checkpoint()
     std::filesystem::create_directories(directory, error);
     if (error)
     {
-        std::printf("nomlp: could not create checkpoint directory: %s\n", error.message().c_str());
+        logerror("nomlp: could not create checkpoint directory: %s\n", error.message().c_str());
         return;
     }
 
@@ -129,7 +129,7 @@ void noMlp::save_checkpoint()
         !write_binary(directory / "adam_weights.bin", adam_weight_state) ||
         !write_binary(directory / "adam_bias.bin", adam_bias_state))
     {
-        std::printf("nomlp: failed writing checkpoint data\n");
+        logerror("nomlp: failed writing checkpoint data\n");
         return;
     }
 
@@ -152,7 +152,7 @@ void noMlp::save_checkpoint()
     config.close();
     if (!config)
     {
-        std::printf("nomlp: failed writing checkpoint config\n");
+        logerror("nomlp: failed writing checkpoint config\n");
         return;
     }
 
@@ -163,7 +163,7 @@ void noMlp::save_checkpoint()
     adam_config.close();
     if (!adam_config)
     {
-        std::printf("nomlp: failed writing Adam config\n");
+        logerror("nomlp: failed writing Adam config\n");
         return;
     }
 
@@ -171,7 +171,7 @@ void noMlp::save_checkpoint()
     host_bias_array.swap(biases);
     std::printf("nomlp: checkpoint saved\n");
     } catch (const std::exception &error) {
-        std::printf("nomlp: checkpoint save failed: %s\n", error.what());
+        logerror("nomlp: checkpoint save failed: %s\n", error.what());
     }
 }
 
@@ -182,7 +182,7 @@ void noMlp::load_checkpoint()
         layers.empty() || d_weights == nullptr || d_bias == nullptr ||
         adam_weights == nullptr || adam_bias == nullptr)
     {
-        std::printf("nomlp: set a checkpoint address and initialize the model before loading\n");
+        logerror("nomlp: set a checkpoint address and initialize the model before loading\n");
         return;
     }
 
@@ -190,7 +190,7 @@ void noMlp::load_checkpoint()
     std::vector<int> saved_network;
     if (!read_network(directory / "model_config.txt", saved_network) || saved_network != modeldata.network)
     {
-        std::printf("nomlp: checkpoint network does not match the initialized model\n");
+        logerror("nomlp: checkpoint network does not match the initialized model\n");
         return;
     }
     
@@ -204,7 +204,7 @@ void noMlp::load_checkpoint()
         !read_binary(directory / "adam_bias.bin", biasbuffersize, adam_bias_state) ||
         !read_adam_step(directory / "adam_config.txt", saved_adam_step))
     {
-        std::printf("nomlp: checkpoint files are missing or invalid\n");
+        logerror("nomlp: checkpoint files are missing or invalid\n");
         return;
     }
 
@@ -230,6 +230,6 @@ void noMlp::load_checkpoint()
     std::vector<float>().swap(host_bias_array);
     std::printf("nomlp: checkpoint loaded\n");
     } catch (const std::exception &error) {
-        std::printf("nomlp: checkpoint load failed: %s\n", error.what());
+        logerror("nomlp: checkpoint load failed: %s\n", error.what());
     }
 }

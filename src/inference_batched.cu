@@ -77,7 +77,7 @@ bool runnetinf(int curBatch, noMlp &m)
 	dim3 grid(l1blocks, curBatch);
 
 	firstlayerbatchinf<<<grid, threads>>>(m.layers[0].node_out, m.layers[0].node_in, w, m.d_inputs, m.d_weights, m.d_bias, m.d_nodevals, m.nodedatabuffersize, m.activationInt);
-	if (!geterror("launch first batch layer", cudaGetLastError()))
+	if (!checkkernel("launch first batch layer"))
 		return false;
 
 	for (int l = 1; l < m.layers.size(); l++)
@@ -95,7 +95,7 @@ bool runnetinf(int curBatch, noMlp &m)
 		bool isout = (l == m.layers.size() - 1);
 		dim3 grid2(blocks, curBatch);
 		solvelayersbatchinf<<<grid2, threads>>>(m.layers[l].node_out, nin, wl, d, b, p, isout, m.d_weights, m.d_bias, m.d_nodevals, m.nodedatabuffersize, m.activationInt);
-		if (!geterror("launch batch layer", cudaGetLastError()))
+		if (!checkkernel("launch batch layer"))
 			return false;
 	}
 
@@ -106,20 +106,20 @@ std::vector<float> noMlp::inference_batch(std::vector<float> &inputs)
 {
 	if(inputs.size() <= 0){
 	
-		std::printf("nomlp: input size shouldn't be zero or negative ,inputs size: (%d)\n", static_cast<int>(inputs.size()));
+		logerror("nomlp: input size shouldn't be zero or negative ,inputs size: (%d)\n", static_cast<int>(inputs.size()));
 		return {};
 	}
 
 	if (!modeldata.batching)
 	{
-		std::printf("nomlp: enable batching in noMlp::init()\n");
+		logerror("nomlp: enable batching in noMlp::init()\n");
 		return {};
 	}
 	if (layers.empty() || modeldata.datasize <= 0 || modeldata.batchsize <= 0 ||
 		d_inputs == nullptr || d_weights == nullptr ||
 		d_bias == nullptr || d_nodevals == nullptr)
 	{
-		std::printf("nomlp: initialize the model and its buffers before inference_batch()\n");
+		logerror("nomlp: initialize the model and its buffers before inference_batch()\n");
 		return {};
 	}
 
@@ -134,7 +134,7 @@ std::vector<float> noMlp::inference_batch(std::vector<float> &inputs)
 	}
 	catch (const std::exception &error)
 	{
-		std::printf("nomlp: could not allocate batch buffers: %s\n", error.what());
+		logerror("nomlp: could not allocate batch buffers: %s\n", error.what());
 		return {};
 	}
 	for (int step = 0; step < numbatches; step++)
@@ -155,7 +155,6 @@ std::vector<float> noMlp::inference_batch(std::vector<float> &inputs)
 		cudaError_t err = cudaMemcpy(d_inputs, batchInputs.data(), inputBytes, cudaMemcpyHostToDevice);
 		if (!geterror("copy input batch to device", err))
 			return {};
-
 		if (!runnetinf(curbatch, *this))
 			return {};
 

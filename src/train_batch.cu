@@ -107,7 +107,7 @@ bool runnet(int curBatch, noMlp &m)
 	dim3 grid(l1blocks, curBatch);
 
 	firstlayerbatch<<<grid, threads>>>(m.layers[0].node_out, m.layers[0].node_in, w, m.d_inputs, m.d_weights, m.d_bias, m.d_preact, m.d_nodevals, m.nodedatabuffersize, m.activationInt);
-	if (!geterror("launch first batch layer", cudaGetLastError()))
+	if (!checkkernel("launch first batch layer"))
 		return false;
 
 	for (int l = 1; l < m.layers.size(); l++)
@@ -125,7 +125,7 @@ bool runnet(int curBatch, noMlp &m)
 		bool isout = (l == m.layers.size() - 1);
 		dim3 grid2(blocks, curBatch);
 		solvelayersbatch<<<grid2, threads>>>(m.layers[l].node_out, nin, wl, d, b, p, isout, m.d_weights, m.d_bias, m.d_preact, m.d_nodevals, m.nodedatabuffersize, m.activationInt);
-		if (!geterror("launch batch layer", cudaGetLastError()))
+		if (!checkkernel("launch batch layer"))
 			return false;
 	}
 
@@ -137,7 +137,7 @@ bool runnet(int curBatch, noMlp &m)
 	const layerstruct &outputLayer = m.layers[m.layers.size() - 1];
 	bool issoftmax =m.modeldata.output_mode == outputmode::softmaxCrossEntrophy;
 	getloss<<<1, 1>>>(curBatch, m.d_nodevals, m.d_target, outputLayer.nodedata_index, outputLayer.node_out, m.nodedatabuffersize,issoftmax);
-	return geterror("launch batch loss", cudaGetLastError());
+	return checkkernel("launch batch loss");
 }
 
 
@@ -163,7 +163,7 @@ float noMlp::train_batch(std::vector<float> &inputs, std::vector<float> &targets
 
 	if (!modeldata.batching)
 	{
-		std::printf("nomlp: enable batching in noMlp::init()\n");
+		logerror("nomlp: enable batching in noMlp::init()\n");
 		return 0.0f;
 	}
 
@@ -173,24 +173,26 @@ float noMlp::train_batch(std::vector<float> &inputs, std::vector<float> &targets
 		const size_t expectedTargetCount = static_cast<size_t>(modeldata.datasize) * modeldata.node_out;
 		if (inputs.size() != expectedInputCount || targets.size() != expectedTargetCount)
 		{
-			std::printf("nomlp: train_batch expects datasize * node_in inputs and datasize * node_out targets\n");
+			logerror("nomlp: train_batch expects datasize * node_in inputs and datasize * node_out targets\n");
 			return 0.0f;
 		}
-		for (float input : inputs)
+		if constexpr (debug)
 		{
-			if (!std::isfinite(input))
+			for (float input : inputs)
 			{
-				std::printf("nomlp: inputs must contain finite values\n");
-				return 0.0f;
+				if (!std::isfinite(input))
+				{
+					logerror("nomlp: inputs must contain finite values\n");
+					return 0.0f;
+				}
 			}
-		}
-		for (float target : targets)
-
-		{
-			if (!std::isfinite(target))
+			for (float target : targets)
 			{
-				std::printf("nomlp: targets must contain finite values\n");
-				return 0.0f;
+				if (!std::isfinite(target))
+				{
+					logerror("nomlp: targets must contain finite values\n");
+					return 0.0f;
+				}
 			}
 		}
 
@@ -202,7 +204,7 @@ float noMlp::train_batch(std::vector<float> &inputs, std::vector<float> &targets
 	}
 	catch (const std::exception &error)
 	{
-		std::printf("nomlp: could not allocate batch buffers: %s\n", error.what());
+		logerror("nomlp: could not allocate batch buffers: %s\n", error.what());
 		return 0.0f;
 	}
 
@@ -217,7 +219,7 @@ float noMlp::train_batch(std::vector<float> &inputs, std::vector<float> &targets
 	}
 	catch (const std::exception &error)
 	{
-		std::printf("nomlp: could not allocate batch indices: %s\n", error.what());
+		logerror("nomlp: could not allocate batch indices: %s\n", error.what());
 		return 0.0f;
 	}
 	float zero=0.0f;
@@ -250,11 +252,13 @@ float noMlp::train_batch(std::vector<float> &inputs, std::vector<float> &targets
 		if (!geterror("copy target batch to device", err))
 			return 0.0f;
 
-		runnet(curbatch, *this);
+		if (!runnet(curbatch, *this))
+			return 0.0f;
 			
 		
 
-		backpropogationbatch(curbatch, *this);
+		if (!backpropogationbatch(curbatch, *this))
+			return 0.0f;
 		
 	}
 		

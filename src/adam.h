@@ -8,11 +8,18 @@ inline float beta2 = 0.999f;
 inline bool initadam(noMlp &m)
 {
     m.adam_step = 1;
-    if (!geterror("Adam weight allocation", cudaMalloc(&m.adam_weights, m.weightbuffersize * sizeof(float2)))) return false;
-    if (!geterror("Adam bias allocation", cudaMalloc(&m.adam_bias, m.biasbuffersize * sizeof(float2)))) return false;
+    if (!geterror("Adam weight allocation", cudaMalloc(&m.adam_weights, m.weightbuffersize * sizeof(float2))))
+        return false;
+    if (!geterror("Adam bias allocation", cudaMalloc(&m.adam_bias, m.biasbuffersize * sizeof(float2))))
+        return false;
 
-    if (!geterror("Adam weight initialization", cudaMemset(m.adam_weights, 0, m.weightbuffersize * sizeof(float2)))) return false;
-    if (!geterror("Adam bias initialization", cudaMemset(m.adam_bias, 0, m.biasbuffersize * sizeof(float2)))) return false;
+    if (!geterror("Adam weight initialization", cudaMemset(m.adam_weights, 0, m.weightbuffersize * sizeof(float2))))
+        return false;
+    if (!geterror("Adam bias initialization", cudaMemset(m.adam_bias, 0, m.biasbuffersize * sizeof(float2))))
+        return false;
+
+
+
     return true;
 }
 inline void clearadam(noMlp &m)

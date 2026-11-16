@@ -69,26 +69,26 @@ static float backpropogation(noMlp& m, const std::vector<float> &targets)
         m.d_bias == nullptr || m.d_nodevals == nullptr || m.d_delta == nullptr ||
         m.d_preact == nullptr || m.adam_weights == nullptr || m.adam_bias == nullptr)
 	{
-        std::printf("nomlp: initialize the model before running backpropagation\n");
+		logerror("nomlp: initialize the model before running backpropagation\n");
 		return 0.0f;
 	}
-
     if (targets.empty() || targets.size() != static_cast<size_t>(m.modeldata.node_out))
 	{
-        std::printf("nomlp: target array size is empty or does not match the output size\n");
+		logerror("nomlp: target array size is empty or does not match the output size\n");
 		return 0.0f;
 	}
-    for (float target : targets) {
-        if (!std::isfinite(target)) {
-            std::printf("nomlp: targets must contain finite values\n");
-            return 0.0f;
+    if constexpr (debug) {
+        for (float target : targets) {
+            if (!std::isfinite(target)) {
+                logerror("nomlp: targets must contain finite values\n");
+                return 0.0f;
+            }
         }
     }
 	cudaError_t err = cudaMemcpy(
 		m.d_target, targets.data(), targets.size() * sizeof(float),
 		cudaMemcpyHostToDevice);
     if (!geterror("copy targets to device", err)) return 0.0f;
-
 	constexpr int threads = 256;
 	for (int l = m.layers_count - 1; l >= 0; --l)
 	{
@@ -114,7 +114,7 @@ static float backpropogation(noMlp& m, const std::vector<float> &targets)
 			next_layer_data_offset, output_layer,
 			m.d_nodevals, m.d_delta, m.d_weights,
 			m.d_target, m.d_preact, m.activationInt);
-		if (!geterror("launch delta kernel", cudaGetLastError())) return 0.0f;
+		if (!checkkernel("launch delta kernel")) return 0.0f;
 	}
 
 	for (int l = m.layers_count - 1; l >= 0; --l)
@@ -133,11 +133,14 @@ static float backpropogation(noMlp& m, const std::vector<float> &targets)
 			layer.weight_index, layer.node_in, layer.nodedata_index,
 			layer.bias_index, m.d_inputs, m.d_nodevals,
 			m.d_weights, m.d_delta, m.d_bias, {beta1, beta2, betat1, betat2}, m.adam_weights, m.adam_bias,m.modeldata.lr);
-		if (!geterror("launch weight-update kernel", cudaGetLastError())) return 0.0f;
-	}
+		if (!checkkernel("launch weight-update kernel")) return 0.0f;
+		}
 	m.adam_step++;
-	if (!geterror("backpropagation synchronization", cudaDeviceSynchronize())) return 0.0f;
-
+	if constexpr (debug) {
+		if (!geterror("backpropagation synchronization", cudaDeviceSynchronize())) return 0.0f;
+	} else if (!checkkernels("backpropagation kernels")) {
+		return 0.0f;
+	}
 	float loss = 0.0f;
 
 	for (int i = 0; i < m.modeldata.node_out; ++i)

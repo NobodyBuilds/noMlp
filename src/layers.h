@@ -32,13 +32,13 @@ inline void setoffsets(noMlp& m){
 
 inline bool initlayers(const std::vector<int>& neurons,noMlp& m){
     if (neurons.size() < 2) {
-        std::printf("nomlp: network must contain at least input and output sizes\n");
+        logerror("nomlp: network must contain at least input and output sizes\n");
         return false;
     }
 
     for (int node_count : neurons) {
         if (node_count <= 0) {
-            std::printf("nomlp: network layer sizes must be positive\n");
+            logerror("nomlp: network layer sizes must be positive\n");
             return false;
         }
     }

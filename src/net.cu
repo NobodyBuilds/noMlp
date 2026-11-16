@@ -58,22 +58,24 @@ __global__ void hiddenlayers(int n,int n_in,int w,int d,int p,int b,bool isout,c
 
 std::vector<float> forwardpass(noMlp& m, const std::vector<float> &inputs){
    if(m.modeldata.batching) {
-       std::printf("nomlp: use train_batch() for batched training or disable batching in initialization\n");
+       logerror("nomlp: use train_batch() for batched training or disable batching in initialization\n");
        return {};
    }
     if (m.layers.empty() || m.d_inputs == nullptr || m.d_weights == nullptr ||
         m.d_bias == nullptr || m.d_nodevals == nullptr || m.d_preact == nullptr) {
-        std::printf("nomlp: initialize the model before running prediction\n");
+        logerror("nomlp: initialize the model before running prediction\n");
         return {};
     }
     if (inputs.size() != static_cast<size_t>(m.layers.front().node_in)) {
-        std::printf("nomlp: input size does not match the network input size\n");
+        logerror("nomlp: input size does not match the network input size\n");
         return {};
     }
-    for (float input : inputs) {
-        if (!std::isfinite(input)) {
-            std::printf("nomlp: inputs must contain finite values\n");
-            return {};
+    if constexpr (debug) {
+        for (float input : inputs) {
+            if (!std::isfinite(input)) {
+                logerror("nomlp: inputs must contain finite values\n");
+                return {};
+            }
         }
     }
    cudaError_t err= cudaMemcpy(m.d_inputs,inputs.data(), inputs.size() * sizeof(float),cudaMemcpyHostToDevice);
@@ -85,7 +87,7 @@ std::vector<float> forwardpass(noMlp& m, const std::vector<float> &inputs){
      int threads = n<512?n :512;
     size_t smem_size=nin*sizeof(float);
     firstlayer<<<blocks(n,threads),threads,smem_size>>>(n,nin,m.d_inputs,m.d_weights,m.d_bias,m.d_nodevals,m.d_preact,m.activationInt);
-    if (!geterror("launch first-layer kernel", cudaGetLastError())) return {};
+    if (!checkkernel("launch first-layer kernel")) return {};
    
 
     for(int l=1;l<m.layers_count;l++){
@@ -101,7 +103,7 @@ std::vector<float> forwardpass(noMlp& m, const std::vector<float> &inputs){
         threads=n<512?n:512;
         size_t smem= nin*sizeof(float);
         hiddenlayers<<<blocks(n,threads),threads,smem>>>(n,nin,widx,didx,pidx,bidx,isout,m.d_weights,m.d_bias,m.d_preact,m.d_nodevals,m.activationInt);
-        if (!geterror("launch hidden-layer kernel", cudaGetLastError())) return {};
+        if (!checkkernel("launch hidden-layer kernel")) return {};
        
     }
     if(m.modeldata.output_mode==outputmode::softmaxCrossEntrophy){

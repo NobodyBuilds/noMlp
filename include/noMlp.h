@@ -5,15 +5,44 @@
 #include <cstdio>
 #include <cuda_runtime.h>
 
+#ifndef debug
+#define debug false
+#endif
+
+template <typename... Args>
+inline void logerror(const char *format, Args... args)
+{
+    if constexpr (debug)
+        std::printf(format, args...);
+    else
+        std::printf("nomlp: error\n");
+}
 
 inline bool geterror(const char *label, cudaError_t err)
 {
     if (err != cudaSuccess)
     {
-        std::printf("nomlp: %s failed: %s\n", label, cudaGetErrorString(err));
+        if constexpr (debug)
+            std::printf("nomlp: %s failed: %s\n", label, cudaGetErrorString(err));
+        else
+            std::printf("nomlp: CUDA error: %s\n", cudaGetErrorString(err));
         return false;
     }
     return true;
+}
+
+inline bool checkkernel(const char *label)
+{
+    if constexpr (debug)
+        return geterror(label, cudaGetLastError());
+    return true;
+}
+
+inline bool checkkernels(const char *label)
+{
+    if constexpr (debug)
+        return true;
+    return geterror(label, cudaGetLastError());
 }
 struct layerstruct
 {

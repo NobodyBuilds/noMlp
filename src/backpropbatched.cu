@@ -24,33 +24,32 @@ __global__ void convertr2c(float *rw, float *cw, int n, int l1w, int l_out, int 
     cw[i] = rw[l1w + (row * l_out + col)];
 }
 
-
 __global__ void compute_delta(int n, int d, int l1_nout, int l1w, int l1_nin,
-	int l1d, bool outlayer, const float *__restrict__ nodedata, float *dDelta,
-	const float *__restrict__ dWeights, const float *__restrict__ dtarget,
-	const float *__restrict__ dpreact, int nodedatasize, int activation_type)
+                              int l1d, bool outlayer, const float *__restrict__ nodedata, float *dDelta,
+                              const float *__restrict__ dWeights, const float *__restrict__ dtarget,
+                              const float *__restrict__ dpreact, int nodedatasize, int activation_type)
 {
 
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	int b = blockIdx.y;
-	if (i >= n)
-		return;
-	if (outlayer)
-	{
-		const int outputOffset = b * nodedatasize + d;
-		const int targetOffset = b * n;
-		dDelta[outputOffset + i] = nodedata[outputOffset + i] - dtarget[targetOffset + i];
-	}
-	else
-	{
-		float sum = 0.0f;
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int b = blockIdx.y;
+    if (i >= n)
+        return;
+    if (outlayer)
+    {
+        const int outputOffset = b * nodedatasize + d;
+        const int targetOffset = b * n;
+        dDelta[outputOffset + i] = nodedata[outputOffset + i] - dtarget[targetOffset + i];
+    }
+    else
+    {
+        float sum = 0.0f;
 #pragma unroll 4
-		for (int k = 0; k < l1_nout; k++)
-		{
-			sum += dWeights[k * l1_nin + i] * dDelta[b * nodedatasize + l1d + k];
-		}
-		dDelta[b * nodedatasize + d + i] = sum * dslope(dpreact[b * nodedatasize + d + i], activation_type);
-	}
+        for (int k = 0; k < l1_nout; k++)
+        {
+            sum += dWeights[k * l1_nin + i] * dDelta[b * nodedatasize + l1d + k];
+        }
+        dDelta[b * nodedatasize + d + i] = sum * dslope(dpreact[b * nodedatasize + d + i], activation_type);
+    }
 }
 
 __global__ void proposed_tunebias(
@@ -109,54 +108,55 @@ __global__ void proposed_tuneweights(
                 wgrad / curbatch, d_lr, beta);
 }
 
-
-
-bool backpropogationbatch(int cb, noMlp& m)
+bool backpropogationbatch(int cb, noMlp &m)
 {
-	if (cb <= 0 || m.layers.empty() || m.d_delta == nullptr ||
-	    m.d_weights == nullptr || m.d_bias == nullptr || m.d_target == nullptr ||
-	    m.d_inputs == nullptr || m.d_nodevals == nullptr || m.d_preact == nullptr ||
-	    m.adam_weights == nullptr || m.adam_bias == nullptr) {
-		std::printf("nomlp: invalid model state for batch backpropagation\n");
-		return false;
-	}
-	
-        
-		int threads = 256;
-	for (int l = m.layers_count - 1; l >= 0; l--)
-	{
-		
-		int d = m.layers[l].nodedata_index;
-		int n = m.layers[l].node_out;
-		int l1out = 0, l1w = 0, l1d = 0, l1nin = 0;
-		
-		if (l < m.layers_count - 1)
-		{
-			l1out = m.layers[l + 1].node_out;
-			l1w = m.layers[l + 1].weight_index;
-			l1d = m.layers[l + 1].nodedata_index;
-			l1nin = m.layers[l + 1].node_in;
-		}
-		
-		bool outlayer = (l == m.layers_count - 1) ? 1 : 0;
 
-		if(!outlayer){
+    if (cb <= 0 || m.layers.empty() || m.d_delta == nullptr ||
+        m.d_weights == nullptr || m.d_bias == nullptr || m.d_target == nullptr ||
+        m.d_inputs == nullptr || m.d_nodevals == nullptr || m.d_preact == nullptr ||
+        m.adam_weights == nullptr || m.adam_bias == nullptr)
+    {
+        logerror("nomlp: invalid model state for batch backpropagation\n");
+        return false;
+    }
 
-			size_t layer_weight_size = l1nin * l1out;	
-			convertr2c<<<(layer_weight_size + 255) / 256, 256 >>>(m.d_weights, m.column_major_weights, layer_weight_size, m.layers[l + 1].weight_index, m.layers[l + 1].node_out, l1nin);
-		}
-		int blocks = (n + threads - 1) / threads;
-		dim3 deltaGrid(blocks, cb);
-		compute_delta<<<deltaGrid, threads>>>(n, d, l1out, l1w, l1nin, l1d, outlayer, m.d_nodevals, m.d_delta, m.column_major_weights, m.d_target, m.d_preact, m.nodedatabuffersize, m.activationInt);
-		if (!geterror("launch batch delta kernel", cudaGetLastError())) return false;
-	}
+    int threads = 256;
+    for (int l = m.layers_count - 1; l >= 0; l--)
+    {
 
-	float betat2 = 1.0f / (1.0f - powf(beta2, m.adam_step));
-	float betat1 = 1.0f / (1.0f - powf(beta1, m.adam_step));
-	const float4 beta={beta1,beta2,betat1,betat2};
-	for (int l = m.layers_count - 1; l >= 0; l--)
-	{
-		 const int nin = m.layers[l].node_in;
+        int d = m.layers[l].nodedata_index;
+        int n = m.layers[l].node_out;
+        int l1out = 0, l1w = 0, l1d = 0, l1nin = 0;
+
+        if (l < m.layers_count - 1)
+        {
+            l1out = m.layers[l + 1].node_out;
+            l1w = m.layers[l + 1].weight_index;
+            l1d = m.layers[l + 1].nodedata_index;
+            l1nin = m.layers[l + 1].node_in;
+        }
+
+        bool outlayer = (l == m.layers_count - 1) ? 1 : 0;
+
+        if (!outlayer)
+        {
+
+            size_t layer_weight_size = l1nin * l1out;
+            convertr2c<<<(layer_weight_size + 255) / 256, 256>>>(m.d_weights, m.column_major_weights, layer_weight_size, m.layers[l + 1].weight_index, m.layers[l + 1].node_out, l1nin);
+        }
+        int blocks = (n + threads - 1) / threads;
+        dim3 deltaGrid(blocks, cb);
+        compute_delta<<<deltaGrid, threads>>>(n, d, l1out, l1w, l1nin, l1d, outlayer, m.d_nodevals, m.d_delta, m.column_major_weights, m.d_target, m.d_preact, m.nodedatabuffersize, m.activationInt);
+        if (!checkkernel("launch batch delta kernel"))
+            return false;
+    }
+
+    float betat2 = 1.0f / (1.0f - powf(beta2, m.adam_step));
+    float betat1 = 1.0f / (1.0f - powf(beta1, m.adam_step));
+    const float4 beta = {beta1, beta2, betat1, betat2};
+    for (int l = m.layers_count - 1; l >= 0; l--)
+    {
+        const int nin = m.layers[l].node_in;
         const int l1d = l == 0 ? 0 : m.layers[l - 1].nodedata_index;
         const int lw = m.layers[l].weight_index;
         const int d = m.layers[l].nodedata_index;
@@ -178,8 +178,9 @@ bool backpropogationbatch(int cb, noMlp& m)
             m.layers[l].node_out, nin, l, lw, d, l1d,
             m.d_delta, m.d_inputs, m.d_weights, m.d_nodevals,
             m.nodedatabuffersize, cb, m.adam_weights, beta, m.modeldata.lr);
-if (!geterror("launch batch weight-update kernel", cudaGetLastError())) return false;
-	}
+        if (!checkkernel("launch batch weight-update kernel"))
+            return false;
+    }
     m.adam_step++;
-	return true;
+    return true;
 }

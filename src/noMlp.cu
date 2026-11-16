@@ -35,7 +35,7 @@ bool setmodelactivation(noMlp& m) {
         m.activationInt = 3;
     else
     {
-        std::printf("nomlp: unsupported activation; use tanh, relu, or leakyrelu\n");
+        logerror("nomlp: unsupported activation; use tanh, relu, or leakyrelu\n");
         return false;
     }
 
@@ -48,7 +48,7 @@ void noMlp::init(modelconfig& model ){
     try {
         config = model;
     } catch (const std::exception &error) {
-        std::printf("nomlp: could not copy model configuration: %s\n", error.what());
+        logerror("nomlp: could not copy model configuration: %s\n", error.what());
         return;
     }
     close();
@@ -56,17 +56,17 @@ void noMlp::init(modelconfig& model ){
         d_bias != nullptr || d_nodevals != nullptr || d_preact != nullptr ||
         d_delta != nullptr || adam_weights != nullptr ||
         adam_bias != nullptr) {
-        std::printf("nomlp: could not release existing buffers; initialization stopped\n");
+        logerror("nomlp: could not release existing buffers; initialization stopped\n");
         return;
     }
     modeldata = std::move(config);
     if (modeldata.network.size() >= 2 &&
         (modeldata.node_in !=modeldata.network.front() || modeldata.node_out != modeldata.network.back())) {
-        std::printf("nomlp: model input/output sizes must match the network endpoints\n");
+        logerror("nomlp: model input/output sizes must match the network endpoints\n");
         return;
     }
     if (modeldata.batching && modeldata.batchsize <= 0) {
-        std::printf("nomlp: batch size must be positive\n");
+        logerror("nomlp: batch size must be positive\n");
         return;
     }
     try {
@@ -78,7 +78,7 @@ void noMlp::init(modelconfig& model ){
         }
         initWB(*this);
     } catch (const std::exception &error) {
-        std::printf("nomlp: model initialization failed: %s\n", error.what());
+        logerror("nomlp: model initialization failed: %s\n", error.what());
         close();
         return;
     }
