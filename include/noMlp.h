@@ -52,7 +52,8 @@ struct layerstruct
     int bias_index;
     int nodedata_index;
 };
-enum class outputmode{
+enum class outputmode
+{
     linearMse,
     softmaxCrossEntrophy
 };
@@ -63,7 +64,7 @@ struct modelconfig
     float lr = 0.0f;
     int datasize = 0;
     bool batching = false;
-    outputmode output_mode=outputmode::linearMse;
+    outputmode output_mode = outputmode::linearMse;
     int batchsize = 1;
     std::string_view activation = "tanh";
     const char *checkpoint_adrs = nullptr;
@@ -80,16 +81,15 @@ public:
     std::vector<float> host_weights_array;
     std::vector<float> host_bias_array;
     std::vector<int> indices;
-    	std::vector<float> batchInputs;
-	std::vector<float> batchTargets;
+    std::vector<float> batchInputs;
+    std::vector<float> batchTargets;
     int layers_count = 0;
 
     float *d_inputs = nullptr;
     float *d_target = nullptr;
-    
 
     float *d_weights = nullptr;
-    float* column_major_weights=nullptr;
+    float *column_major_weights = nullptr;
     float *d_bias = nullptr;
 
     float *d_nodevals = nullptr;
@@ -97,7 +97,7 @@ public:
     float *d_delta = nullptr;
     float2 *adam_weights = nullptr; // x= m,y=v;
     float2 *adam_bias = nullptr;    // x= m,y=v;
-  
+
     int adam_step = 1;
     int weightbuffersize = 0;
     int biasbuffersize = 0;
@@ -128,4 +128,14 @@ public:
         modeldata.lr = lr;
     }
 
+    void backward_gradient(const std::vector<float> &gradient);
+
+    std::vector<float> forward_batch(
+        const std::vector<float> &inputs);
+
+        void backward_batch(
+    const std::vector<float>& targets,
+    const std::vector<float>& gradient = {},
+    bool external_gradient = false
+);
 };
