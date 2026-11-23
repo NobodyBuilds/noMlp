@@ -11,25 +11,8 @@
 #include <cmath>
 #include <exception>
 #include "softmax.cuh"
+#include "train_batch.cuh"
 
-/*
-==BENCHMARK DETAILS==
--for train_batch();
-
-before optimizations:
-
-	batchsize=64  :4.30sec/epoch
-	batchsize=128 :3.70sec/epoch
-	batchsize=256 :3.40sec/epoch
-	batchsize=512 :4.02sec/epoch
-	batchsize=1024:4.36sec/epoch
-
-	dataset size =48,000
-	network 784->512->256->128->64->20
-
-
-after optimizations:
-*/
 __device__ float loss=0.0f;
 __global__ void getloss(int curBatch, const float *dNodeData, const float *dTarget,
 						int d, int outputCount, int nodedatasize,bool issoftmax)

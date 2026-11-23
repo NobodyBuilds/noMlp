@@ -130,12 +130,13 @@ public:
 
     void backward_gradient(const std::vector<float> &gradient);
 
-    std::vector<float> forward_batch(
+    std::vector<float> forward(
         const std::vector<float> &inputs);
 
-        void backward_batch(
-    const std::vector<float>& targets,
-    const std::vector<float>& gradient = {},
-    bool external_gradient = false
-);
+    std::vector<float> backward(
+        const std::vector<float> &targets,
+        const std::vector<float> &gradient = {},
+        bool external_gradient = false);
+
+    void step();
 };
