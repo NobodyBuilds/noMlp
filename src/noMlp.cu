@@ -27,11 +27,11 @@
 bool setmodelactivation(noMlp& m) {
     modelconfig& model = m.modeldata;
 
-    if (model.activation == "tanh")
+    if (model.activation == activationType::tanh)
         m.activationInt = 1;
-    else if (model.activation == "relu")
+    else if (model.activation == activationType::relu)
         m.activationInt = 2;
-    else if (model.activation == "leakyrelu")
+    else if (model.activation == activationType::leakyRelu)
         m.activationInt = 3;
     else
     {
@@ -39,7 +39,7 @@ bool setmodelactivation(noMlp& m) {
         return false;
     }
 
-    model.batchsize = model.batching ? model.batchsize : 1;
+   
     return true;
 }
 
@@ -65,7 +65,7 @@ void noMlp::init(modelconfig& model ){
         logerror("nomlp: model input/output sizes must match the network endpoints\n");
         return;
     }
-    if (modeldata.batching && modeldata.batchsize <= 0) {
+    if ( modeldata.batchsize <= 0) {
         logerror("nomlp: batch size must be positive\n");
         return;
     }

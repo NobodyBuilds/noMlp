@@ -144,9 +144,9 @@ static bool first_itr = true;
 float noMlp::train_batch(std::vector<float> &inputs, std::vector<float> &targets)
 {
 
-	if (!modeldata.batching)
+	if (modeldata.batchsize<=1)
 	{
-		logerror("nomlp: enable batching in noMlp::init()\n");
+		logerror("nomlp: set batchsize more than 1 in noMlp::init()\n");
 		return 0.0f;
 	}
 

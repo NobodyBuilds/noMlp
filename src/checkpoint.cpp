@@ -1,7 +1,3 @@
-#include "checkpoint.h"
-#include "adam.h"
-
-#include <cuda_runtime.h>
 #include <filesystem>
 #include <fstream>
 #include <cstdio>
@@ -9,7 +5,8 @@
 #include <sstream>
 #include <string>
 #include <vector>
-
+#include "noMlp.h"
+#include "adam.h"
 namespace
 {
 template <typename T>
@@ -138,7 +135,7 @@ void noMlp::save_checkpoint()
            << "Output Nodes: " << modeldata.node_out << '\n'
            << "Learning Rate: " << modeldata.lr << '\n'
            << "Data Size: " << modeldata.datasize << '\n'
-           << "Batching: " << (modeldata.batching ? "Enabled" : "disabled") << '\n'
+         
            << "Network Structure: ";
     for (std::size_t i = 0; i < modeldata.network.size(); ++i)
     {
@@ -147,8 +144,8 @@ void noMlp::save_checkpoint()
         config << modeldata.network[i];
     }
     config << '\n'
-           << "Batch Size: " << modeldata.batchsize << '\n'
-           << "Activation Function: " << modeldata.activation << '\n';
+           << "Batch Size: " << modeldata.batchsize << '\n';
+         
     config.close();
     if (!config)
     {

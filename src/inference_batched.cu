@@ -110,11 +110,7 @@ std::vector<float> noMlp::inference_batch(std::vector<float> &inputs)
 		return {};
 	}
 
-	if (!modeldata.batching)
-	{
-		logerror("nomlp: enable batching in noMlp::init()\n");
-		return {};
-	}
+	
 	if (layers.empty() || modeldata.datasize <= 0 || modeldata.batchsize <= 0 ||
 		d_inputs == nullptr || d_weights == nullptr ||
 		d_bias == nullptr || d_nodevals == nullptr)

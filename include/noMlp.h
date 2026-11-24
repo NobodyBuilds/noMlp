@@ -57,16 +57,21 @@ enum class outputmode
     linearMse,
     softmaxCrossEntrophy
 };
+enum class activationType{
+    tanh,
+    relu,
+    leakyRelu
+};
 struct modelconfig
 {
     int node_in = 0;
     int node_out = 0;
     float lr = 0.0f;
     int datasize = 0;
-    bool batching = false;
     outputmode output_mode = outputmode::linearMse;
     int batchsize = 1;
-    std::string_view activation = "tanh";
+    activationType activation =activationType::tanh;
+
     const char *checkpoint_adrs = nullptr;
 
     std::vector<int> network;
@@ -109,9 +114,7 @@ public:
     void init(modelconfig &model);
     void close();
 
-    std::vector<float> prediction(std::vector<float> &inputs);
-    float backward(std::vector<float> &targets);
-
+   
     float train_batch(std::vector<float> &inputs, std::vector<float> &targets);
 
     std::vector<float> inference_batch(std::vector<float> &inputs);
@@ -128,15 +131,21 @@ public:
         modeldata.lr = lr;
     }
 
-    void backward_gradient(const std::vector<float> &gradient);
-
+   
     std::vector<float> forward(
         const std::vector<float> &inputs);
 
     std::vector<float> backward(
         const std::vector<float> &targets,
-        const std::vector<float> &gradient = {},
+       
         bool external_gradient = false);
 
     void step();
+
+    void uploadCustomWeights(std::vector<float>& weights);
+    void uploadCustomBiases(std::vector<float>& bias);
+    void getWeights(std::vector<float>& constainer);
+    void getBias(std::vector<float>& constainer);
+
+    
 };

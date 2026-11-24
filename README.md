@@ -41,7 +41,7 @@ int main()
     config.node_in = 2;
     config.node_out = 1;
     config.lr = 0.01f;
-    config.activation = "tanh";
+    config.activation = activationType::tanh;
     config.network = {2, 4, 1};
 
     noMlp model;
@@ -77,10 +77,10 @@ modelconfig config;
 config.node_in = 2;
 config.node_out = 1;
 config.lr = 0.01f;
-config.batching = true;
+
 config.batchsize = 2;
 config.datasize = 4;
-config.activation = "relu";
+config.activation = activationType::relu;
 config.network = {2, 4, 1};
 
 noMlp model;

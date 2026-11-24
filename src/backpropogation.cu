@@ -4,230 +4,73 @@
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include "adam.h"
-
+#include "backpropkernels.cuh"
 #include <cmath>
+#include <vector>
 
-__global__ void compute_delta(
-	int n, int data_offset, int next_layer_out, int next_layer_weight_offset,
-	int next_layer_input_count, int next_layer_data_offset, bool output_layer,
-	const float *node_values, float *deltas,
-	const float *weights, const float *targets, const float *preactivations,
-	int activation_type, bool external_grad)
+std::vector<float> noMlp::backward(const std::vector<float> &targets, bool externeal_gradient)
 {
 
-	const int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i >= n)
-		return;
-
-	if (output_layer)
+	if (targets.size() != modeldata.batchsize * modeldata.node_out)
 	{
-
-		const float target = targets[i];
-		deltas[data_offset + i] = (external_grad) ? target: node_values[data_offset + i] - target;
-
-		return;
+		printf("invalid targets size \n");
+		return {};
 	}
 
-	float sum = 0.0f;
-	for (int k = 0; k < next_layer_out; ++k)
-	{
-		sum += weights[next_layer_weight_offset + i * next_layer_out + k] * deltas[next_layer_data_offset + k];
-	}
-	deltas[data_offset + i] = sum * dslope(preactivations[data_offset + i], activation_type);
-}
-
-__global__ void tuneweights(
-	int output_count, int input_count, int layer_index, int previous_data_offset,
-	int weight_offset, int weight_stride, int data_offset, int bias_offset,
-	const float *inputs, const float *node_values, float *weights,
-	const float *deltas, float *biases, float4 adam_beta, float2 *adam_weights, float2 *adam_bias, float d_lr)
-{
-
-	const int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i >= output_count)
-		return;
-
-	for (int k = 0; k < input_count; ++k)
-	{
-		const float node_data = layer_index == 0
-									? inputs[k]
-									: node_values[previous_data_offset + k];
-
-		const int index = weight_offset + k * output_count + i;
-
-		// weights[index] -= d_lr * deltas[data_offset + i] * node_data;
-		adam_update(weights[index], adam_weights[index], deltas[data_offset + i] * node_data, d_lr, adam_beta);
-	}
-	// biases[bias_offset + i] -= d_lr * deltas[data_offset + i];
-	adam_update(biases[bias_offset + i], adam_bias[bias_offset + i], deltas[data_offset + i], d_lr, adam_beta);
-}
-
-static float backpropogation(noMlp &m, const std::vector<float> &targets)
-{
-	if (m.layers.empty() || m.d_target == nullptr || m.d_weights == nullptr ||
-		m.d_bias == nullptr || m.d_nodevals == nullptr || m.d_delta == nullptr ||
-		m.d_preact == nullptr || m.adam_weights == nullptr || m.adam_bias == nullptr)
-	{
-		logerror("nomlp: initialize the model before running backpropagation\n");
-		return 0.0f;
-	}
-	if (targets.empty() || targets.size() != static_cast<size_t>(m.modeldata.node_out))
-	{
-		logerror("nomlp: target array size is empty or does not match the output size\n");
-		return 0.0f;
-	}
-	if constexpr (debug)
-	{
-		for (float target : targets)
-		{
-			if (!std::isfinite(target))
-			{
-				logerror("nomlp: targets must contain finite values\n");
-				return 0.0f;
-			}
-		}
-	}
-	cudaError_t err = cudaMemcpy(
-		m.d_target, targets.data(), targets.size() * sizeof(float),
-		cudaMemcpyHostToDevice);
-	if (!geterror("copy targets to device", err))
-		return 0.0f;
-	constexpr int threads = 256;
-	for (int l = m.layers_count - 1; l >= 0; --l)
-	{
-		const layerstruct &layer = m.layers[l];
-		const bool output_layer = l == m.layers_count - 1;
-		int next_layer_out = 0;
-		int next_layer_weight_offset = 0;
-		int next_layer_input_count = 0;
-		int next_layer_data_offset = 0;
-
-		if (!output_layer)
-		{
-			const layerstruct &next_layer = m.layers[l + 1];
-			next_layer_out = next_layer.node_out;
-			next_layer_weight_offset = next_layer.weight_index;
-			next_layer_input_count = next_layer.node_in;
-			next_layer_data_offset = next_layer.nodedata_index;
-		}
-
-		compute_delta<<<blocks(layer.node_out, threads), threads>>>(
-			layer.node_out, layer.nodedata_index, next_layer_out,
-			next_layer_weight_offset, next_layer_input_count,
-			next_layer_data_offset, output_layer,
-			m.d_nodevals, m.d_delta, m.d_weights,
-			m.d_target, m.d_preact, m.activationInt, false);
-		if (!checkkernel("launch delta kernel"))
-			return 0.0f;
-	}
-
-	for (int l = m.layers_count - 1; l >= 0; --l)
-	{
-		const layerstruct &layer = m.layers[l];
-		const int previous_data_offset = l == 0
-											 ? 0
-											 : m.layers[l - 1].nodedata_index;
-
-		float beta1 = 0.9f;
-		float beta2 = 0.999f;
-		float betat1 = 1.0f / (1.0f - powf(beta1, m.adam_step));
-		float betat2 = 1.0f / (1.0f - powf(beta2, m.adam_step));
-		tuneweights<<<blocks(layer.node_out, threads), threads>>>(
-			layer.node_out, layer.node_in, l, previous_data_offset,
-			layer.weight_index, layer.node_in, layer.nodedata_index,
-			layer.bias_index, m.d_inputs, m.d_nodevals,
-			m.d_weights, m.d_delta, m.d_bias, {beta1, beta2, betat1, betat2}, m.adam_weights, m.adam_bias, m.modeldata.lr);
-		if (!checkkernel("launch weight-update kernel"))
-			return 0.0f;
-	}
-	m.adam_step++;
-	if constexpr (debug)
-	{
-		if (!geterror("backpropagation synchronization", cudaDeviceSynchronize()))
-			return 0.0f;
-	}
-	else if (!checkkernels("backpropagation kernels"))
-	{
-		return 0.0f;
-	}
-	float loss = 0.0f;
-
-	for (int i = 0; i < m.modeldata.node_out; ++i)
-	{
-		if (m.modeldata.output_mode == outputmode::softmaxCrossEntrophy)
-		{
-
-			loss += -targets[i] * logf(fmaxf(m.host_outputs[i], 1e-7f));
-		}
-		else
-		{
-			const float difference = m.host_outputs[i] - targets[i];
-			loss += 0.5f * difference * difference;
-		}
-	}
-
-	return loss;
-}
-
-float noMlp::backward(std::vector<float> &targets)
-{
-
-	return backpropogation(*this, targets);
-}
-
-void noMlp::backward_gradient(const std::vector<float> &gradient)
-{
-
-	int threads = 256;
 	noMlp &m = *this;
-if (gradient.size() != m.modeldata.node_out)
-    return;
-	cudaMemcpy(m.d_target, gradient.data(), gradient.size() * sizeof(float), cudaMemcpyHostToDevice);
-
-	for (int l = m.layers_count - 1; l >= 0; --l)
+	if (m.modeldata.batchsize <= 0 || m.layers.empty() || m.d_delta == nullptr ||
+		m.d_weights == nullptr || m.d_bias == nullptr || m.d_target == nullptr ||
+		m.d_inputs == nullptr || m.d_nodevals == nullptr || m.d_preact == nullptr ||
+		m.adam_weights == nullptr || m.adam_bias == nullptr)
 	{
-		const layerstruct &layer = m.layers[l];
-		const bool output_layer = l == m.layers_count - 1;
-		int next_layer_out = 0;
-		int next_layer_weight_offset = 0;
-		int next_layer_input_count = 0;
-		int next_layer_data_offset = 0;
+		logerror("nomlp: invalid model state for  backward\n");
+		return {};
+	}
+	size_t bytes = (modeldata.batchsize * modeldata.node_out) * sizeof(float);
 
-		if (!output_layer)
+	if (!geterror(" gradient copy to device ", cudaMemcpy(d_target, targets.data(), bytes, cudaMemcpyHostToDevice)))
+	{
+		return {};
+	}
+
+	int threads = 1024;
+
+	for (int l = m.layers_count - 1; l >= 0; l--)
+	{
+
+		int d = m.layers[l].nodedata_index;
+		int n = m.layers[l].node_out;
+		int l1out = 0, l1w = 0, l1d = 0, l1nin = 0;
+
+		if (l < m.layers_count - 1)
 		{
-			const layerstruct &next_layer = m.layers[l + 1];
-			next_layer_out = next_layer.node_out;
-			next_layer_weight_offset = next_layer.weight_index;
-			next_layer_input_count = next_layer.node_in;
-			next_layer_data_offset = next_layer.nodedata_index;
+			l1out = m.layers[l + 1].node_out;
+			l1w = m.layers[l + 1].weight_index;
+			l1d = m.layers[l + 1].nodedata_index;
+			l1nin = m.layers[l + 1].node_in;
 		}
 
-		compute_delta<<<blocks(layer.node_out, threads), threads>>>(
-			layer.node_out, layer.nodedata_index, next_layer_out,
-			next_layer_weight_offset, next_layer_input_count,
-			next_layer_data_offset, output_layer,
-			m.d_nodevals, m.d_delta, m.d_weights,
-			m.d_target, m.d_preact, m.activationInt, true);
+		bool outlayer = (l == m.layers_count - 1) ? 1 : 0;
+
+		if (!outlayer)
+		{
+
+			size_t layer_weight_size = l1nin * l1out;
+			convertr2c<<<(layer_weight_size + 255) / 256, 256>>>(m.d_weights, m.column_major_weights, layer_weight_size, m.layers[l + 1].weight_index, m.layers[l + 1].node_out, l1nin);
+		}
+		threads = n > 1024 ? 1024 : n > 512 ? 512
+											: 256;
+		int blocks = (n + threads - 1) / threads;
+		dim3 deltaGrid(blocks, m.modeldata.batchsize);
+		compute_delta<<<deltaGrid, threads>>>(n, d, l1out, l1w, l1nin, l1d, outlayer, m.d_nodevals, m.d_delta, m.column_major_weights, m.d_target, m.d_preact, m.nodedatabuffersize, m.activationInt, externeal_gradient);
+		if (!checkkernel("launch batch delta kernel"))
+			return {};
 	}
 
-	for (int l = m.layers_count - 1; l >= 0; --l)
-	{
-		const layerstruct &layer = m.layers[l];
-		const int previous_data_offset = l == 0
-											 ? 0
-											 : m.layers[l - 1].nodedata_index;
+	host_weights_array.resize(modeldata.batchsize * nodedatabuffersize);
 
-		float beta1 = 0.9f;
-		float beta2 = 0.999f;
-		float betat1 = 1.0f / (1.0f - powf(beta1, m.adam_step));
-		float betat2 = 1.0f / (1.0f - powf(beta2, m.adam_step));
-		tuneweights<<<blocks(layer.node_out, threads), threads>>>(
-			layer.node_out, layer.node_in, l, previous_data_offset,
-			layer.weight_index, layer.node_in, layer.nodedata_index,
-			layer.bias_index, m.d_inputs, m.d_nodevals,
-			m.d_weights, m.d_delta, m.d_bias, {beta1, beta2, betat1, betat2}, m.adam_weights, m.adam_bias, m.modeldata.lr);
-		if (!checkkernel("launch weight-update kernel"))
-			return;
+	if(!geterror("delta cpy to host", cudaMemcpy(&host_weights_array,d_delta,modeldata.batchsize * nodedatabuffersize*sizeof(float),cudaMemcpyDeviceToHost))){
+		return {};
 	}
-	m.adam_step++;
+	return host_weights_array;
 }

@@ -7,6 +7,7 @@
 #include "activations.h"
 #include "adam.h"
 #include "backpropbatched.h"
+#include "backpropkernels.cuh"
 
 #include <cmath>
 
@@ -27,7 +28,7 @@ __global__ void convertr2c(float *rw, float *cw, int n, int l1w, int l_out, int 
 __global__ void compute_delta(int n, int d, int l1_nout, int l1w, int l1_nin,
                               int l1d, bool outlayer, const float *__restrict__ nodedata, float *dDelta,
                               const float *__restrict__ dWeights, const float *__restrict__ dtarget,
-                              const float *__restrict__ dpreact, int nodedatasize, int activation_type)
+                              const float *__restrict__ dpreact, int nodedatasize, int activation_type, bool external_grad)
 {
 
     int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -38,7 +39,7 @@ __global__ void compute_delta(int n, int d, int l1_nout, int l1w, int l1_nin,
     {
         const int outputOffset = b * nodedatasize + d;
         const int targetOffset = b * n;
-        dDelta[outputOffset + i] = nodedata[outputOffset + i] - dtarget[targetOffset + i];
+        dDelta[outputOffset + i] = external_grad ? dtarget[targetOffset + i] : nodedata[outputOffset + i] - dtarget[targetOffset + i];
     }
     else
     {
@@ -146,7 +147,7 @@ bool backpropogationbatch(int cb, noMlp &m)
         }
         int blocks = (n + threads - 1) / threads;
         dim3 deltaGrid(blocks, cb);
-        compute_delta<<<deltaGrid, threads>>>(n, d, l1out, l1w, l1nin, l1d, outlayer, m.d_nodevals, m.d_delta, m.column_major_weights, m.d_target, m.d_preact, m.nodedatabuffersize, m.activationInt);
+        compute_delta<<<deltaGrid, threads>>>(n, d, l1out, l1w, l1nin, l1d, outlayer, m.d_nodevals, m.d_delta, m.column_major_weights, m.d_target, m.d_preact, m.nodedatabuffersize, m.activationInt, false);
         if (!checkkernel("launch batch delta kernel"))
             return false;
     }
