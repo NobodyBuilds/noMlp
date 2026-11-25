@@ -129,15 +129,17 @@ public:
     void update_learning_rate(float lr)
     {
         modeldata.lr = lr;
+        
     }
 
    
+   
     std::vector<float> forward(
-        const std::vector<float> &inputs);
+        const std::vector<float> &inputs,int batchsize=-1);
 
     std::vector<float> backward(
         const std::vector<float> &targets,
-       
+       int batchsize =-1,
         bool external_gradient = false);
 
     void step();

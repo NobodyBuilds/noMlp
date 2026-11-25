@@ -11,10 +11,13 @@
 #include "train_batch.cuh"
 
 
-std::vector<float> noMlp::forward(const std::vector<float>&inputs){
+std::vector<float> noMlp::forward(const std::vector<float>&inputs,int batchsize){
 
     noMlp & m=*this;
-    if(inputs.size() != m.modeldata.node_in* m.modeldata.batchsize) {
+
+    int curbatch= batchsize==-1?modeldata.batchsize:batchsize;
+
+    if(inputs.size() != m.modeldata.node_in* curbatch) {
         printf("the inputs size does not match to batchsize * inputs \n");
          return{};
     }
@@ -25,7 +28,7 @@ std::vector<float> noMlp::forward(const std::vector<float>&inputs){
    int n= m.layers[0].node_out;
     int threads= n>1024?1024: n>512? 512: 256;
    int dim= (n+threads-1)/threads;
-   dim3 grid(dim,m.modeldata.batchsize);
+   dim3 grid(dim,curbatch);
    int w= m.layers[0].weight_index;
     firstlayerbatch<<<grid,threads>>>(n,m.layers[0].node_in,w, m.d_inputs,m.d_weights,m.d_bias,m.d_preact,m.d_nodevals,m.nodedatabuffersize,m.activationInt);
 
@@ -42,18 +45,18 @@ std::vector<float> noMlp::forward(const std::vector<float>&inputs){
 		int p = m.layers[l - 1].nodedata_index;
 
 		bool isout = (l == m.layers.size() - 1);
-		dim3 grid2(blocks, m.modeldata.batchsize);
+		dim3 grid2(blocks, curbatch);
 		solvelayersbatch<<<grid2, threads>>>(m.layers[l].node_out, nin, wl, d, b, p, isout, m.d_weights, m.d_bias, m.d_preact, m.d_nodevals, m.nodedatabuffersize, m.activationInt);
 		
 	}
     
     int d=m.layers.back().nodedata_index;
-    if(!geterror("mem cpy back to host",cudaMemcpy2D(&m.host_outputs,
+    if(!geterror("mem cpy back to host",cudaMemcpy2D(m.host_outputs.data(),
         m.modeldata.node_out *sizeof(float),
         m.d_nodevals+d,
         static_cast<size_t>(nodedatabuffersize) * sizeof(float) ,
         m.modeldata.node_out*sizeof(float),
-        m.modeldata.batchsize,
+        curbatch,
     cudaMemcpyDeviceToHost))){
         return{};
     }
